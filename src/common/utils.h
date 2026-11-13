@@ -17,13 +17,6 @@
 #include <vector>
 #include <windows.h>
 
-// Separator for joining wide-string paths.
-#if defined(_WIN32)
-#define TS_PATH_SEP L"\\"
-#else
-#define TS_PATH_SEP L"/"
-#endif
-
 #include "gui/gui.h"
 #include "features/game_state_source.h"
 

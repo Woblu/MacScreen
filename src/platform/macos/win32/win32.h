@@ -83,6 +83,22 @@ typedef void (*_se_translator_function)(unsigned int, EXCEPTION_POINTERS*);
 #define EXCEPTION_INT_DIVIDE_BY_ZERO 0xC0000094u
 #define EXCEPTION_ILLEGAL_INSTRUCTION 0xC000001Du
 #define EXCEPTION_BREAKPOINT 0x80000003u
+#define EXCEPTION_DATATYPE_MISALIGNMENT 0x80000002u
+#define EXCEPTION_ARRAY_BOUNDS_EXCEEDED 0xC000008Cu
+#define EXCEPTION_FLT_DENORMAL_OPERAND 0xC000008Du
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO 0xC000008Eu
+#define EXCEPTION_FLT_INEXACT_RESULT 0xC000008Fu
+#define EXCEPTION_FLT_INVALID_OPERATION 0xC0000090u
+#define EXCEPTION_FLT_OVERFLOW 0xC0000091u
+#define EXCEPTION_FLT_STACK_CHECK 0xC0000092u
+#define EXCEPTION_FLT_UNDERFLOW 0xC0000093u
+#define EXCEPTION_INT_OVERFLOW 0xC0000095u
+#define EXCEPTION_PRIV_INSTRUCTION 0xC0000096u
+#define EXCEPTION_IN_PAGE_ERROR 0xC0000006u
+#define EXCEPTION_NONCONTINUABLE_EXCEPTION 0xC0000025u
+#define EXCEPTION_INVALID_DISPOSITION 0xC0000026u
+#define EXCEPTION_GUARD_PAGE 0x80000001u
+#define EXCEPTION_INVALID_HANDLE 0xC0000008u
 
 typedef struct _SECURITY_ATTRIBUTES {
     DWORD nLength;
@@ -276,6 +292,9 @@ typedef struct tagBITMAPINFO {
 #define VERTRES 10
 #define BITSPIXEL 12
 #define WHITE_BRUSH 0
+#define LTGRAY_BRUSH 1
+#define GRAY_BRUSH 2
+#define DKGRAY_BRUSH 3
 #define BLACK_BRUSH 4
 #define NULL_BRUSH 5
 #define PW_CLIENTONLY 0x00000001
@@ -359,6 +378,11 @@ typedef struct tagOFNW {
     DWORD FlagsEx;
 } OPENFILENAMEW, *LPOPENFILENAMEW;
 typedef OPENFILENAMEW OPENFILENAME;
+#define CDERR_GENERALCODES 0x0000
+#define FNERR_FILENAMECODES 0x3000
+#define FNERR_SUBCLASSFAILURE 0x3001
+#define FNERR_INVALIDFILENAME 0x3002
+#define FNERR_BUFFERTOOSMALL 0x3003
 #define OFN_READONLY 0x00000001
 #define OFN_OVERWRITEPROMPT 0x00000002
 #define OFN_HIDEREADONLY 0x00000004
@@ -957,6 +981,37 @@ int _wremove(const wchar_t* name);
 int _wrename(const wchar_t* from, const wchar_t* to);
 
 } // extern "C"
+
+// Narrow variants used by the overloads below.
+extern "C" {
+BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags);
+BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists);
+BOOL RemoveDirectoryA(LPCSTR path);
+BOOL PathFileExistsA(LPCSTR path);
+int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa);
+HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags);
+}
+
+// std::filesystem::path::c_str() is a narrow (UTF-8) string on macOS, so the
+// wide file APIs also accept narrow paths.
+inline HANDLE CreateFileW(const char* name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags,
+                          HANDLE templateFile) {
+    return CreateFileA(name, access, share, sa, disposition, flags, templateFile);
+}
+inline DWORD GetFileAttributesW(const char* name) { return GetFileAttributesA(name); }
+inline BOOL GetFileAttributesExW(const char* name, GET_FILEEX_INFO_LEVELS level, LPVOID info) { return GetFileAttributesExA(name, level, info); }
+inline BOOL DeleteFileW(const char* name) { return DeleteFileA(name); }
+inline BOOL MoveFileExW(const char* from, const char* to, DWORD flags) { return MoveFileExA(from, to, flags); }
+inline BOOL MoveFileW(const char* from, const char* to) { return MoveFileExA(from, to, MOVEFILE_COPY_ALLOWED); }
+inline BOOL CopyFileW(const char* from, const char* to, BOOL failIfExists) { return CopyFileA(from, to, failIfExists); }
+inline BOOL CreateDirectoryW(const char* path, LPSECURITY_ATTRIBUTES sa) { return CreateDirectoryA(path, sa); }
+inline BOOL RemoveDirectoryW(const char* path) { return RemoveDirectoryA(path); }
+inline BOOL PathFileExistsW(const char* path) { return PathFileExistsA(path); }
+inline BOOL PathIsRelativeW(const char* path) { return PathIsRelativeA(path); }
+inline int SHCreateDirectoryExW(HWND hwnd, const char* path, const SECURITY_ATTRIBUTES* sa) { return SHCreateDirectoryExA(hwnd, path, sa); }
+inline HANDLE LoadImageW(HINSTANCE instance, const char* name, UINT type, int cx, int cy, UINT flags) {
+    return LoadImageA(instance, name, type, cx, cy, flags);
+}
 
 // Templated array overloads provided by the MSVC CRT.
 template <size_t N> inline int sprintf_s(char (&buffer)[N], const char* format, ...) {

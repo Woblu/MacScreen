@@ -413,6 +413,12 @@ bool ConsumeMouseLeaveRequest(HWND) { return g_trackLeave.exchange(false); }
 
 DWORD WindowThreadId() { return g_windowThreadId.load(); }
 
+bool ForeignWindowId(HWND hwnd, uint32_t& windowId) {
+    if (!IsForeign(hwnd)) return false;
+    windowId = ForeignId(hwnd);
+    return true;
+}
+
 } // namespace MacWin32
 
 // ---------------------------------------------------------------------------------------------------

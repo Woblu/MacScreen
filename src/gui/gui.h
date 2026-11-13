@@ -22,6 +22,13 @@
 #include "imgui.h"
 #include "version.h"
 
+// Separator for joining wide-string paths.
+#if defined(_WIN32)
+#define TS_PATH_SEP L"\\"
+#else
+#define TS_PATH_SEP L"/"
+#endif
+
 typedef unsigned int GLuint;
 
 struct Color {

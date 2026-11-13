@@ -4,6 +4,7 @@
 #include "platform/macos/win32/gdi_internal.h"
 
 #include "platform/macos/os/mac_os.h"
+#include "platform/macos/os/mac_window_capture.h"
 #include "platform/macos/win32/user32_internal.h"
 #include "platform/macos/win32/win32_internal.h"
 
@@ -376,6 +377,12 @@ HANDLE LoadImageW(HINSTANCE, LPCWSTR name, UINT type, int cx, int cy, UINT flags
     return nullptr;
 }
 
+HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags) {
+    if (IS_INTRESOURCE(name)) return LoadImageW(instance, reinterpret_cast<LPCWSTR>(name), type, cx, cy, flags);
+    const std::wstring wide = MacWin32::Utf8ToWide(name);
+    return LoadImageW(instance, wide.c_str(), type, cx, cy, flags);
+}
+
 HANDLE CopyImage(HANDLE image, UINT, int cx, int cy, UINT flags) {
     MacGdi::CursorObject* src = MacGdi::AsCursor(static_cast<HCURSOR>(image));
     if (!src || src->width <= 0) return nullptr;
@@ -630,15 +637,43 @@ LONG GetBitmapBits(HBITMAP bitmap, LONG count, LPVOID bits) {
     return n;
 }
 
-BOOL BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) {
-    // Screen contents of other windows are captured with ScreenCaptureKit instead.
-    SetLastError(ERROR_ACCESS_DENIED);
-    return FALSE;
+// Copies a captured frame of another application's window into the bitmap
+// selected into `dst` (ScreenCaptureKit; see os/mac_window_capture.h).
+static BOOL CaptureForeignWindow(HWND window, HDC dst, int x, int y, int cx, int cy) {
+    uint32_t windowId = 0;
+    DcObject* dc = As<DcObject>(dst, GdiType::Dc);
+    BitmapObject* b = dc ? As<BitmapObject>(dc->selected, GdiType::Bitmap) : nullptr;
+    if (!MacWin32::ForeignWindowId(window, windowId) || !b || b->bitsPerPixel != 32) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+    x = std::max(0, x);
+    y = std::max(0, y);
+    cx = std::min(cx, b->width - x);
+    cy = std::min(cy, b->height - y);
+    if (cx <= 0 || cy <= 0) return FALSE;
+    uint8_t* origin = b->pixels.data() + (static_cast<size_t>(y) * b->width + x) * 4;
+    if (!MacWindowCapture::CopyFrame(windowId, cx, cy, origin, static_cast<size_t>(b->width) * 4)) {
+        SetLastError(ERROR_ACCESS_DENIED);
+        return FALSE;
+    }
+    return TRUE;
 }
 
-BOOL PrintWindow(HWND, HDC, UINT) {
-    SetLastError(ERROR_ACCESS_DENIED);
-    return FALSE;
+BOOL BitBlt(HDC dst, int x, int y, int cx, int cy, HDC src, int, int, DWORD) {
+    DcObject* source = As<DcObject>(src, GdiType::Dc);
+    if (!source || !source->window) {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+    return CaptureForeignWindow(source->window, dst, x, y, cx, cy);
+}
+
+BOOL PrintWindow(HWND hwnd, HDC hdc, UINT) {
+    DcObject* dc = As<DcObject>(hdc, GdiType::Dc);
+    BitmapObject* b = dc ? As<BitmapObject>(dc->selected, GdiType::Bitmap) : nullptr;
+    if (!b) return FALSE;
+    return CaptureForeignWindow(hwnd, hdc, 0, 0, b->width, b->height);
 }
 
 int FillRect(HDC hdc, const RECT* rect, HBRUSH brush) {

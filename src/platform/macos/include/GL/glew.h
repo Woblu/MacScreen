@@ -5,6 +5,11 @@
 // window's default framebuffer; see render/gl_redirect.h.
 #include_next <GL/glew.h>
 
+// GLEW #undefs APIENTRY at the end of its header outside Windows.
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+
 #if defined(__cplusplus) && !defined(TS_MAC_GL_REDIRECT_IMPL)
 #include "platform/macos/render/gl_redirect.h"
 #endif

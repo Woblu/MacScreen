@@ -85,4 +85,7 @@ bool ConsumeMouseLeaveRequest(HWND hwnd);
 // Thread id of the game's window thread (main thread).
 DWORD WindowThreadId();
 
+// CGWindowID behind an HWND that refers to another application's window.
+bool ForeignWindowId(HWND hwnd, uint32_t& windowId);
+
 } // namespace MacWin32

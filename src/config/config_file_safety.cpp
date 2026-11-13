@@ -232,7 +232,7 @@ std::string DisplayNameFor(const std::wstring& path) {
     if (!g_toolscreenPath.empty()) {
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(std::filesystem::path(path), std::filesystem::path(g_toolscreenPath), error);
-        if (!error && !relative.empty() && relative.native().rfind(L"..", 0) != 0) {
+        if (!error && !relative.empty() && relative.wstring().rfind(L"..", 0) != 0) {
             return WideToUtf8(relative.wstring());
         }
     }

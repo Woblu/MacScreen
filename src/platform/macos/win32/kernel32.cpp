@@ -1455,6 +1455,23 @@ BOOL MoveFileExW(LPCWSTR from, LPCWSTR to, DWORD flags) {
 
 BOOL MoveFileW(LPCWSTR from, LPCWSTR to) { return MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED); }
 
+BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags) {
+    const std::wstring wideFrom = MacWin32::Utf8ToWide(from ? from : "");
+    if (!to) return MoveFileExW(wideFrom.c_str(), nullptr, flags);
+    const std::wstring wideTo = MacWin32::Utf8ToWide(to);
+    return MoveFileExW(wideFrom.c_str(), wideTo.c_str(), flags);
+}
+
+BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists) { return CopyPath(NarrowPath(from), NarrowPath(to), failIfExists != FALSE); }
+
+BOOL RemoveDirectoryA(LPCSTR path) {
+    if (rmdir(NarrowPath(path).c_str()) != 0) {
+        SetErrno(errno);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 BOOL CopyFileW(LPCWSTR from, LPCWSTR to, BOOL failIfExists) { return CopyPath(NarrowPath(from), NarrowPath(to), failIfExists != FALSE); }
 
 BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES) {
@@ -1541,6 +1558,11 @@ BOOL PathIsRelativeA(LPCSTR path) {
 
 BOOL PathIsRelativeW(LPCWSTR path) { return PathIsRelativeA(MacWin32::WideToUtf8(path ? path : L"").c_str()); }
 
+BOOL PathFileExistsA(LPCSTR path) {
+    struct stat st {};
+    return stat(NarrowPath(path).c_str(), &st) == 0;
+}
+
 BOOL PathFileExistsW(LPCWSTR path) {
     struct stat st {};
     return stat(NarrowPath(path).c_str(), &st) == 0;
@@ -1591,6 +1613,11 @@ int SHCreateDirectoryExW(HWND, LPCWSTR path, const SECURITY_ATTRIBUTES*) {
         if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) return static_cast<int>(ErrnoToWin32(errno));
     }
     return ERROR_SUCCESS;
+}
+
+int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa) {
+    const std::wstring wide = MacWin32::Utf8ToWide(path ? path : "");
+    return SHCreateDirectoryExW(hwnd, wide.c_str(), sa);
 }
 
 void CoTaskMemFree(LPVOID pv) { free(pv); }
