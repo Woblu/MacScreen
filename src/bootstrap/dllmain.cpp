@@ -4640,6 +4640,10 @@ static void InstallGameWindowHooks(HWND gameWindow) {
     LogCategory("init", "Game-window hooks enabled.");
 }
 
+#if defined(__APPLE__)
+void MacInstallHooks();
+#endif
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
@@ -4668,8 +4672,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         g_toolscreenPath = GetToolscreenPath();
         if (!g_toolscreenPath.empty()) {
-            std::wstring logsDir = g_toolscreenPath + L"\\logs";
-            std::wstring latestLogPath = logsDir + L"\\latest.log";
+            std::wstring logsDir = g_toolscreenPath + TS_PATH_SEP L"logs";
+            std::wstring latestLogPath = logsDir + TS_PATH_SEP L"latest.log";
 
             if (GetFileAttributesW(latestLogPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
                 HANDLE hFile =
@@ -4685,13 +4689,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                         WCHAR timestamp[32];
                         swprintf_s(timestamp, L"%04d%02d%02d_%02d%02d%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
-                        std::wstring archivedLogPath = logsDir + L"\\" + timestamp + L".log";
+                        std::wstring archivedLogPath = logsDir + TS_PATH_SEP + timestamp + L".log";
 
                         CloseHandle(hFile);
 
                         if (GetFileAttributesW(archivedLogPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
                             for (int counter = 1; counter < 100; counter++) {
-                                std::wstring altPath = logsDir + L"\\" + timestamp + L"_" + std::to_wstring(counter) + L".log";
+                                std::wstring altPath = logsDir + TS_PATH_SEP + timestamp + L"_" + std::to_wstring(counter) + L".log";
                                 if (GetFileAttributesW(altPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
                                     archivedLogPath = altPath;
                                     break;
@@ -4730,7 +4734,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 }
             }
 
-            g_modeFilePath = g_toolscreenPath + L"\\mode.txt";
+            g_modeFilePath = g_toolscreenPath + TS_PATH_SEP L"mode.txt";
         }
         LogCategory("init", "--- DLL instance attached ---");
         LogVersionInfo();
@@ -4771,9 +4775,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
         WCHAR dir[MAX_PATH];
         if (GetCurrentDirectoryW(MAX_PATH, dir) > 0) {
-            g_stateFilePath = std::wstring(dir) + L"\\hermes\\state.json";
-            g_hermesAliveFilePath = std::wstring(dir) + L"\\hermes\\alive";
-            g_stateOutputFilePath = std::wstring(dir) + L"\\wpstateout.txt";
+            g_stateFilePath = std::wstring(dir) + TS_PATH_SEP L"hermes" TS_PATH_SEP L"state.json";
+            g_hermesAliveFilePath = std::wstring(dir) + TS_PATH_SEP L"hermes" TS_PATH_SEP L"alive";
+            g_stateOutputFilePath = std::wstring(dir) + TS_PATH_SEP L"wpstateout.txt";
             LogCategory("init", "Hermes state path: " + WideToUtf8(g_stateFilePath) +
                                     "; State Output path: " + WideToUtf8(g_stateOutputFilePath));
 
@@ -4804,6 +4808,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         StartWindowCaptureThread();
         StartBrowserOverlayThread();
 
+#if defined(__APPLE__)
+        // Hooks are registered by name before LWJGL resolves its functions.
+        MacInstallHooks();
+#else
         if (MH_Initialize() != MH_OK) {
             Log("ERROR: MH_Initialize() failed!");
             return TRUE;
@@ -4842,6 +4850,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 }
             }
         });
+#endif
 
         // Save the original Windows mouse speed so we can restore it on exit
         SaveOriginalWindowsMouseSpeed();
@@ -4937,3 +4946,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     }
     return TRUE;
 }
+
+#if defined(__APPLE__)
+#include "platform/macos/bootstrap/dllmain_macos.inl"
+#endif

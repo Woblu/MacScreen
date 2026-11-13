@@ -23,6 +23,12 @@ set(TOOLSCREEN_LIBLOGGER_FILE_DESCRIPTION "LibLogger")
 set(TOOLSCREEN_INSTALLER_FILE_DESCRIPTION "Toolscreen installer")
 set(TOOLSCREEN_DOWNLOADER_FILE_DESCRIPTION "Toolscreen downloader")
 
+if(APPLE)
+    project(Toolscreen VERSION ${TOOLSCREEN_VERSION} LANGUAGES C CXX OBJC OBJCXX)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/macos.cmake")
+    return()
+endif()
+
 project(Toolscreen VERSION ${TOOLSCREEN_VERSION} LANGUAGES C CXX RC)
 
 include(CTest)

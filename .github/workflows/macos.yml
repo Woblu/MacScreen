@@ -1,0 +1,77 @@
+name: macOS
+
+on:
+  push:
+    branches:
+      - macos
+    paths-ignore:
+      - README.md
+      - docs/**
+      - LICENSE
+      - .github/ISSUE_TEMPLATE/**
+  workflow_dispatch:
+    inputs:
+      universal:
+        description: Build both arm64 and x86_64 (release build)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select architectures
+        id: arch
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.universal }}" == "true" ]]; then
+            echo "archs=arm64;x86_64" >> "$GITHUB_OUTPUT"
+          else
+            echo "archs=arm64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-${{ steps.arch.outputs.archs }}
+          max-size: 500M
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
+          "-DCMAKE_OSX_ARCHITECTURES=${{ steps.arch.outputs.archs }}"
+
+      - name: Build
+        run: cmake --build build --parallel 4 -- -k 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+
+      - name: Error summary
+        if: failure()
+        run: grep -E "error:|fatal error:" build.log | sort | uniq -c | sort -rn | head -200 || true
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: cmake --build build --target macos_package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Toolscreen-macos
+          path: build/package/*
+          if-no-files-found: error
