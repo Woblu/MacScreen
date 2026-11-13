@@ -389,6 +389,9 @@ std::string NormalizePathForComparison(const std::string& path) {
 }
 
 std::wstring GetWindowsFontsDirectory() {
+#if defined(__APPLE__)
+    return MacFonts::SystemTtfFontDirectory();
+#endif
     wchar_t windowsDirectory[MAX_PATH] = {};
     const UINT length = GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
     if (length == 0 || length >= MAX_PATH) {
@@ -425,19 +428,11 @@ std::string ToLowerAscii(std::string value) {
 }
 
 void PopulateSystemFontAssets() {
-#if defined(__APPLE__)
-    std::vector<std::filesystem::path> fontsDirectories;
-    for (const std::string& dir : MacFonts::SystemFontDirectories()) fontsDirectories.emplace_back(dir);
-    const std::filesystem::path fontsDirectory = fontsDirectories.empty() ? std::filesystem::path() : fontsDirectories.front();
-#else
     const std::filesystem::path fontsDirectory(GetWindowsFontsDirectory());
-    const std::vector<std::filesystem::path> fontsDirectories{ fontsDirectory };
-#endif
+    std::error_code iteratorError;
     std::vector<SystemFontAsset> assets;
 
-    for (const std::filesystem::path& directory : fontsDirectories) {
-    std::error_code iteratorError;
-    for (std::filesystem::directory_iterator it(directory, iteratorError), end; !iteratorError && it != end; it.increment(iteratorError)) {
+    for (std::filesystem::directory_iterator it(fontsDirectory, iteratorError), end; !iteratorError && it != end; it.increment(iteratorError)) {
         const std::filesystem::directory_entry& entry = *it;
         std::error_code statusError;
         if (!entry.is_regular_file(statusError) || statusError) {
@@ -452,8 +447,7 @@ void PopulateSystemFontAssets() {
     }
 
     if (iteratorError) {
-        Log("WARNING: Failed to enumerate Windows fonts from " + WideToUtf8(directory.wstring()) + ": " + iteratorError.message());
-    }
+        Log("WARNING: Failed to enumerate Windows fonts from " + WideToUtf8(fontsDirectory.wstring()) + ": " + iteratorError.message());
     }
 
     std::sort(assets.begin(), assets.end(), [](const SystemFontAsset& left, const SystemFontAsset& right) {

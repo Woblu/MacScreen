@@ -8,7 +8,7 @@
 
 namespace MacFonts {
 
-std::vector<std::string> SystemFontDirectories() { return MacOs::FontDirectories(); }
+std::wstring SystemTtfFontDirectory() { return L"/System/Library/Fonts/Supplemental"; }
 
 std::string MapWindowsFontPath(const std::string& path) {
     std::string lower = path;
@@ -22,7 +22,7 @@ std::string MapWindowsFontPath(const std::string& path) {
     std::replace(name.begin(), name.end(), '\\', '/');
     if (name.empty() || name.find('/') != std::string::npos) return {};
 
-    for (const std::string& dir : SystemFontDirectories()) {
+    for (const std::string& dir : MacOs::FontDirectories()) {
         const std::string candidate = dir + "/" + name;
         struct stat st {};
         if (stat(candidate.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return candidate;

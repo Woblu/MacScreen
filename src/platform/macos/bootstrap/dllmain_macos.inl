@@ -12,7 +12,6 @@
 #include "platform/macos/win32/win32_internal.h"
 
 #include <dlfcn.h>
-#include <mach-o/dyld.h>
 #include <unistd.h>
 
 namespace {
@@ -148,40 +147,6 @@ HMODULE ToolscreenModule() {
 
 namespace {
 
-std::atomic<bool> g_macAttached{ false };
-
-bool IsJavaProcess() {
-    char path[PATH_MAX];
-    uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) != 0) return false;
-    const char* base = std::strrchr(path, '/');
-    base = base ? base + 1 : path;
-    return std::strcmp(base, "java") == 0 || std::strcmp(base, "javaw") == 0;
-}
-
-// Keep the injection out of processes the game starts.
-void RemoveSelfFromInsertLibraries() {
-    const char* value = getenv("DYLD_INSERT_LIBRARIES");
-    if (!value) return;
-    std::string kept;
-    std::string entry;
-    std::string list = value;
-    size_t start = 0;
-    while (start <= list.size()) {
-        const size_t end = list.find(':', start);
-        entry = list.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        const bool ours = entry.find("Toolscreen") != std::string::npos || entry.find("liblogger") != std::string::npos;
-        if (!entry.empty() && !ours) {
-            if (!kept.empty()) kept.push_back(':');
-            kept += entry;
-        }
-        if (end == std::string::npos) break;
-        start = end + 1;
-    }
-    if (kept.empty()) unsetenv("DYLD_INSERT_LIBRARIES");
-    else setenv("DYLD_INSERT_LIBRARIES", kept.c_str(), 1);
-}
-
 // liblogger records every native library loaded into the game for run
 // verification. It is shipped next to Toolscreen and loaded before anything
 // else, as the Windows injector does.
@@ -196,22 +161,15 @@ void LoadLibLogger() {
 
 } // namespace
 
-// Called by bootstrap/macos_entry.cpp, whose initializer runs after every other
-// static initializer in the library (it is linked last).
-void MacDllAttach() {
-    if (!IsJavaProcess()) return;
-    if (g_macAttached.exchange(true)) return;
-    RemoveSelfFromInsertLibraries();
+// Toolscreen is loaded with the JVM option -agentpath. The JVM calls these once,
+// before the game starts and while it shuts down; they take the place of
+// DllMain's process attach and process exit.
+extern "C" __attribute__((visibility("default"))) int Agent_OnLoad(void*, char*, void*) {
     LoadLibLogger();
     DllMain(MacWin32::ToolscreenModule(), DLL_PROCESS_ATTACH, nullptr);
+    return 0;
 }
 
-void MacDllDetach() {
-    if (!g_macAttached.load()) return;
-    // The JVM is exiting; take the Windows process-exit path.
+extern "C" __attribute__((visibility("default"))) void Agent_OnUnload(void*) {
     DllMain(MacWin32::ToolscreenModule(), DLL_PROCESS_DETACH, reinterpret_cast<LPVOID>(1));
 }
-
-// Lets the JVM load Toolscreen with -agentpath; all work happens in the constructor.
-extern "C" __attribute__((visibility("default"))) int Agent_OnLoad(void*, char*, void*) { return 0; }
-extern "C" __attribute__((visibility("default"))) void Agent_OnUnload(void*) {}

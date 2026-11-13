@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 namespace MacFonts {
 
@@ -11,7 +10,8 @@ namespace MacFonts {
 // macOS has no font with that file name.
 std::string MapWindowsFontPath(const std::string& path);
 
-// Folders searched for system fonts, in order.
-std::vector<std::string> SystemFontDirectories();
+// The folder holding the .ttf system fonts (Arial, Tahoma, Verdana, ...); the
+// counterpart of C:\Windows\Fonts for the system font list.
+std::wstring SystemTtfFontDirectory();
 
 } // namespace MacFonts

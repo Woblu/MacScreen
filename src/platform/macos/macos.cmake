@@ -170,7 +170,6 @@ file(GLOB_RECURSE TS_MAC_SOURCES CONFIGURE_DEPENDS
     "${TOOLSCREEN_MACOS_DIR}/*.cpp"
     "${TOOLSCREEN_MACOS_DIR}/*.mm"
 )
-list(FILTER TS_MAC_SOURCES EXCLUDE REGEX "/bootstrap/macos_entry\\.cpp$")
 
 # Sources compile as an object library that does not depend on the GLEW/ImGui
 # library targets, so one build reports every compile error.
@@ -225,14 +224,10 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-w"
 )
 
-add_library(Toolscreen SHARED
-    $<TARGET_OBJECTS:toolscreen_objects>
-    # Linked last: its initializer must run after every other one (see the file).
-    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
-)
-target_compile_options(Toolscreen PRIVATE ${TS_MAC_COMPILE_OPTIONS})
+add_library(Toolscreen SHARED $<TARGET_OBJECTS:toolscreen_objects>)
 
 set_target_properties(Toolscreen PROPERTIES
+    LINKER_LANGUAGE CXX
     PREFIX ""
     SUFFIX ".dylib"
     OUTPUT_NAME "Toolscreen"
