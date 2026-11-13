@@ -950,6 +950,11 @@ void SetInputModeThroughBridge(void* window, int mode, int value) {
         g_state.lastRawY = y;
         g_state.haveRaw = true;
     }
+    if (window == g_state.window && mode == kCursor) {
+        // GLFW's Win32 backend updates the cursor image right away on a mode
+        // change; do the same so cursor visibility is current immediately.
+        Deliver(WM_SETCURSOR, reinterpret_cast<WPARAM>(g_state.hwnd), MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+    }
 }
 
 void SetCursorThroughBridge(void* window, void* cursor) {

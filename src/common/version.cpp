@@ -15,6 +15,10 @@ int GetConfigVersion() { return CONFIG_VERSION; }
 std::string GetFullVersionInfo() {
     std::ostringstream oss;
     oss << "Toolscreen v" << TOOLSCREEN_VERSION_STRING;
+#if defined(__APPLE__)
+    // Game logs are read during run verification; name the build that ran.
+    oss << " (macOS port)";
+#endif
     return oss.str();
 }
 

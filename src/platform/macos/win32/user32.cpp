@@ -166,7 +166,7 @@ std::vector<MacOs::Display> CachedDisplays() {
     static uint64_t cacheMs = 0;
     std::lock_guard<std::mutex> lock(mutex);
     const uint64_t now = NowMs();
-    if (cache.empty() || now - cacheMs > 1000 || MacOs::IsMainThread()) {
+    if (cache.empty() || now - cacheMs > 1000) {
         cache = MacOs::Displays();
         cacheMs = now;
     }

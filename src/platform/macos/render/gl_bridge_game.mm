@@ -1,7 +1,6 @@
 // Game-context half of the bridge. Uses the system OpenGL headers and the EXT
 // framebuffer entry points, which are valid in Minecraft's legacy context.
 
-#define GL_SILENCE_DEPRECATION
 #import <Foundation/Foundation.h>
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/CGLIOSurface.h>
@@ -42,6 +41,7 @@ GLuint g_gameReadFramebuffer = 0;
 bool g_gameCopyValid = false;
 
 IOSurfaceRef CreateSurface(int width, int height) {
+    @autoreleasepool {
     const int bytesPerElement = 4;
     NSDictionary* properties = @{
         (id)kIOSurfaceWidth : @(width),
@@ -51,6 +51,7 @@ IOSurfaceRef CreateSurface(int width, int height) {
         (id)kIOSurfacePixelFormat : @((uint32_t)'BGRA'),
     };
     return IOSurfaceCreate((__bridge CFDictionaryRef)properties);
+    }
 }
 
 struct GameStateGuard {

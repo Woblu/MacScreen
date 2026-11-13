@@ -72,11 +72,19 @@ std::string ToStdString(NSString* s) {
     return utf8 ? std::string(utf8) : std::string();
 }
 
+// Runs on the main thread inside an autorelease pool. The game's main thread
+// has no pool of its own outside GLFW's event polling.
 template <typename F> auto OnMain(F&& fn) -> decltype(fn()) {
-    if ([NSThread isMainThread]) return fn();
+    if ([NSThread isMainThread]) {
+        @autoreleasepool {
+            return fn();
+        }
+    }
     __block decltype(fn()) result{};
     dispatch_sync(dispatch_get_main_queue(), ^{
-        result = fn();
+      @autoreleasepool {
+          result = fn();
+      }
     });
     return result;
 }
@@ -96,6 +104,7 @@ LayoutCache g_layout;
 std::atomic<uint64_t> g_layoutGeneration{ 1 };
 
 void LoadLayoutOnMainThread() {
+    @autoreleasepool {
     TISInputSourceRef source = TISCopyCurrentKeyboardLayoutInputSource();
     if (!source) return;
     CFDataRef data = static_cast<CFDataRef>(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData));
@@ -119,6 +128,7 @@ void LoadLayoutOnMainThread() {
     g_layout.id = std::hash<std::string>{}(idString) ^ g_layoutGeneration.fetch_add(1);
     g_layout.loaded = true;
     CFRelease(source);
+    }
 }
 
 void EnsureLayoutObserver() {
@@ -168,7 +178,9 @@ bool IsMainThread() { return [NSThread isMainThread]; }
 
 void RunOnMainThreadSync(const std::function<void()>& fn) {
     if ([NSThread isMainThread]) {
-        fn();
+        @autoreleasepool {
+            fn();
+        }
         return;
     }
     dispatch_sync(dispatch_get_main_queue(), ^{
@@ -220,7 +232,7 @@ std::vector<Display> Displays() {
         result.push_back(d);
     }
     // Work areas (menu bar / dock) need AppKit; only refine them on the main thread.
-    if ([NSThread isMainThread]) {
+    if ([NSThread isMainThread]) @autoreleasepool {
         for (NSScreen* screen in [NSScreen screens]) {
             NSNumber* number = screen.deviceDescription[@"NSScreenNumber"];
             for (Display& d : result) {
@@ -381,6 +393,7 @@ static bool FillForeignWindow(NSDictionary* info, ForeignWindow& w) {
 }
 
 std::vector<ForeignWindow> ListWindows(bool onScreenOnly) {
+    @autoreleasepool {
     std::vector<ForeignWindow> result;
     const CGWindowListOption options =
         (onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll) | kCGWindowListExcludeDesktopElements;
@@ -392,9 +405,11 @@ std::vector<ForeignWindow> ListWindows(bool onScreenOnly) {
     }
     CFRelease(list);
     return result;
+    }
 }
 
 bool WindowInfo(uint32_t windowId, ForeignWindow& out) {
+    @autoreleasepool {
     CFArrayRef ids = CFArrayCreate(nullptr, reinterpret_cast<const void**>(&windowId), 1, nullptr);
     CFArrayRef list = CGWindowListCreateDescriptionFromArray(ids);
     CFRelease(ids);
@@ -404,6 +419,7 @@ bool WindowInfo(uint32_t windowId, ForeignWindow& out) {
         CFRelease(list);
     }
     return found;
+    }
 }
 
 // --- cursor ------------------------------------------------------------------------------
@@ -513,7 +529,7 @@ bool CursorImage(void* cursor, std::vector<uint8_t>& rgba, int& width, int& heig
         rgba.assign(static_cast<size_t>(width) * height * 4, 0);
         CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
         CGContextRef ctx = CGBitmapContextCreate(rgba.data(), width, height, 8, width * 4, space,
-                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                                                 static_cast<uint32_t>(kCGImageAlphaPremultipliedLast) | static_cast<uint32_t>(kCGBitmapByteOrder32Big));
         CGColorSpaceRelease(space);
         if (!ctx) return false;
         NSRect rect = NSMakeRect(0, 0, width, height);
