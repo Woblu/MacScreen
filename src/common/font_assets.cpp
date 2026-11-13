@@ -2,6 +2,9 @@
 
 #include "common/utils.h"
 #include "platform/resource.h"
+#if defined(__APPLE__)
+#include "platform/macos/os/mac_fonts.h"
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -422,11 +425,19 @@ std::string ToLowerAscii(std::string value) {
 }
 
 void PopulateSystemFontAssets() {
+#if defined(__APPLE__)
+    std::vector<std::filesystem::path> fontsDirectories;
+    for (const std::string& dir : MacFonts::SystemFontDirectories()) fontsDirectories.emplace_back(dir);
+    const std::filesystem::path fontsDirectory = fontsDirectories.empty() ? std::filesystem::path() : fontsDirectories.front();
+#else
     const std::filesystem::path fontsDirectory(GetWindowsFontsDirectory());
-    std::error_code iteratorError;
+    const std::vector<std::filesystem::path> fontsDirectories{ fontsDirectory };
+#endif
     std::vector<SystemFontAsset> assets;
 
-    for (std::filesystem::directory_iterator it(fontsDirectory, iteratorError), end; !iteratorError && it != end; it.increment(iteratorError)) {
+    for (const std::filesystem::path& directory : fontsDirectories) {
+    std::error_code iteratorError;
+    for (std::filesystem::directory_iterator it(directory, iteratorError), end; !iteratorError && it != end; it.increment(iteratorError)) {
         const std::filesystem::directory_entry& entry = *it;
         std::error_code statusError;
         if (!entry.is_regular_file(statusError) || statusError) {
@@ -441,7 +452,8 @@ void PopulateSystemFontAssets() {
     }
 
     if (iteratorError) {
-        Log("WARNING: Failed to enumerate Windows fonts from " + WideToUtf8(fontsDirectory.wstring()) + ": " + iteratorError.message());
+        Log("WARNING: Failed to enumerate Windows fonts from " + WideToUtf8(directory.wstring()) + ": " + iteratorError.message());
+    }
     }
 
     std::sort(assets.begin(), assets.end(), [](const SystemFontAsset& left, const SystemFontAsset& right) {
@@ -622,6 +634,14 @@ std::string ResolveToolscreenRelativePath(const std::string& path, const std::ws
     if (path.empty()) {
         return path;
     }
+
+#if defined(__APPLE__)
+    // Windows font paths (the config default, or configs copied from Windows)
+    // resolve to the same font file in the macOS font folders.
+    if (std::string mapped = MacFonts::MapWindowsFontPath(path); !mapped.empty()) {
+        return mapped;
+    }
+#endif
 
     const std::filesystem::path configuredPath = Utf8Path(path);
     if (configuredPath.is_absolute() || toolscreenPath.empty()) {

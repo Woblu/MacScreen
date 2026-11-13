@@ -676,6 +676,30 @@ BOOL TerminateProcess(HANDLE process, UINT exitCode) {
 
 void ExitProcess(UINT exitCode) { exit(static_cast<int>(exitCode)); }
 
+BOOL QueryFullProcessImageNameA(HANDLE process, DWORD, LPSTR name, PDWORD size) {
+    const int pid = PidForHandle(process);
+    const std::string path = pid > 0 ? MacOs::ProcessPath(pid) : std::string();
+    if (path.empty() || !name || !size || *size <= path.size()) {
+        t_lastError = path.empty() ? ERROR_INVALID_HANDLE : ERROR_INSUFFICIENT_BUFFER;
+        return FALSE;
+    }
+    std::memcpy(name, path.c_str(), path.size() + 1);
+    *size = static_cast<DWORD>(path.size());
+    return TRUE;
+}
+
+BOOL QueryFullProcessImageNameW(HANDLE process, DWORD, LPWSTR name, PDWORD size) {
+    const int pid = PidForHandle(process);
+    const std::wstring path = pid > 0 ? MacWin32::Utf8ToWide(MacOs::ProcessPath(pid)) : std::wstring();
+    if (path.empty() || !name || !size || *size <= path.size()) {
+        t_lastError = path.empty() ? ERROR_INVALID_HANDLE : ERROR_INSUFFICIENT_BUFFER;
+        return FALSE;
+    }
+    std::wmemcpy(name, path.c_str(), path.size() + 1);
+    *size = static_cast<DWORD>(path.size());
+    return TRUE;
+}
+
 BOOL CloseHandle(HANDLE handle) {
     KObject* obj = AsObject(handle);
     if (!obj) {

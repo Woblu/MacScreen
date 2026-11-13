@@ -76,6 +76,21 @@ struct GuiFontPathResolutionCache {
 
 GuiFontPathResolutionCache s_guiFontPathResolutionCache;
 
+#if defined(__APPLE__)
+constexpr std::array<const char*, 5> kCjkFallbackFontPaths = {
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+};
+
+constexpr std::array<const char*, 3> kBroadScriptFallbackFontPaths = {
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Tahoma.ttf",
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+};
+#else
 constexpr std::array<const char*, 5> kCjkFallbackFontPaths = {
     "c:\\Windows\\Fonts\\msyh.ttc",
     "c:\\Windows\\Fonts\\msyhbd.ttc",
@@ -89,6 +104,7 @@ constexpr std::array<const char*, 3> kBroadScriptFallbackFontPaths = {
     "c:\\Windows\\Fonts\\tahoma.ttf",
     "c:\\Windows\\Fonts\\malgun.ttf",
 };
+#endif
 
 std::string ResolveRuntimeFontPath(const std::string& path) {
     return ResolveToolscreenRelativePath(path, g_toolscreenPath);

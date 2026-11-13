@@ -152,10 +152,10 @@ typedef struct _MODULEINFO {
 #define SUBLANG_DEFAULT 0x01
 #define SUBLANG_ENGLISH_US 0x01
 #define SORT_DEFAULT 0x0
-#define MAKELANGID(p, s) (static_cast<WORD>((static_cast<WORD>(s) << 10) | static_cast<WORD>(p)))
-#define PRIMARYLANGID(lgid) (static_cast<WORD>(lgid) & 0x3ff)
-#define SUBLANGID(lgid) (static_cast<WORD>(lgid) >> 10)
-#define MAKELCID(lgid, srtid) (static_cast<DWORD>((static_cast<DWORD>(static_cast<WORD>(srtid)) << 16) | static_cast<DWORD>(static_cast<WORD>(lgid))))
+#define MAKELANGID(p, s) ((((WORD)(s)) << 10) | (WORD)(p))
+#define PRIMARYLANGID(lgid) ((WORD)(lgid) & 0x3ff)
+#define SUBLANGID(lgid) ((WORD)(lgid) >> 10)
+#define MAKELCID(lgid, srtid) ((DWORD)((((DWORD)((WORD)(srtid))) << 16) | ((DWORD)((WORD)(lgid)))))
 #define LOCALE_IDEFAULTANSICODEPAGE 0x00001004
 #define LOCALE_RETURN_NUMBER 0x20000000
 #define LANG_JAPANESE 0x11
@@ -409,6 +409,7 @@ typedef struct _DWM_BLURBEHIND {
 // DPI awareness (only referenced through GetProcAddress in imgui_impl_win32)
 #define DECLARE_HANDLE(name) struct name##__ { int unused; }; typedef struct name##__* name
 DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
+#define _DPI_AWARENESS_CONTEXTS_
 #define DPI_AWARENESS_CONTEXT_UNAWARE (reinterpret_cast<DPI_AWARENESS_CONTEXT>(-1))
 #define DPI_AWARENESS_CONTEXT_SYSTEM_AWARE (reinterpret_cast<DPI_AWARENESS_CONTEXT>(-2))
 #define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE (reinterpret_cast<DPI_AWARENESS_CONTEXT>(-3))
@@ -441,6 +442,13 @@ typedef struct _OSVERSIONINFOEXW {
 #define _WIN32_WINNT_WIN7 0x0601
 #define HIBYTE_WORD(x) HIBYTE(x)
 #define LOBYTE_WORD(x) LOBYTE(x)
+
+// IME (imm.h)
+#define GCS_COMPSTR 0x0008
+#define GCS_RESULTSTR 0x0800
+#define CFS_FORCE_POSITION 0x0020
+#define CFS_CANDIDATEPOS 0x0040
+#define CFS_EXCLUDE 0x0080
 
 // WinHTTP
 typedef WORD INTERNET_PORT;
@@ -577,6 +585,8 @@ HANDLE OpenProcess(DWORD access, BOOL inherit, DWORD processId);
 BOOL GetProcessTimes(HANDLE process, LPFILETIME creation, LPFILETIME exitTime, LPFILETIME kernel, LPFILETIME user);
 BOOL GetExitCodeProcess(HANDLE process, LPDWORD exitCode);
 BOOL TerminateProcess(HANDLE process, UINT exitCode);
+BOOL QueryFullProcessImageNameA(HANDLE process, DWORD flags, LPSTR name, PDWORD size);
+BOOL QueryFullProcessImageNameW(HANDLE process, DWORD flags, LPWSTR name, PDWORD size);
 void ExitProcess(UINT exitCode);
 BOOL CloseHandle(HANDLE handle);
 HANDLE CreateThread(LPSECURITY_ATTRIBUTES attrs, SIZE_T stackSize, LPTHREAD_START_ROUTINE start, LPVOID param, DWORD flags,

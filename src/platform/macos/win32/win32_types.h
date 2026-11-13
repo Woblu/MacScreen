@@ -59,6 +59,17 @@ typedef uintptr_t DWORD_PTR;
 typedef size_t SIZE_T;
 typedef intptr_t SSIZE_T;
 typedef float FLOAT;
+typedef int8_t INT8;
+typedef uint8_t UINT8;
+typedef int16_t INT16;
+typedef uint16_t UINT16;
+typedef int32_t INT32;
+typedef uint32_t UINT32;
+typedef int64_t INT64;
+typedef uint64_t UINT64;
+typedef int32_t LONG32;
+typedef uint32_t ULONG32;
+typedef int64_t LONG64;
 typedef UINT_PTR WPARAM;
 typedef LONG_PTR LPARAM;
 typedef LONG_PTR LRESULT;
@@ -209,52 +220,52 @@ typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 // ---------------------------------------------------------------------------
 // Macros
 // ---------------------------------------------------------------------------
-#define LOWORD(l) (static_cast<WORD>(static_cast<DWORD_PTR>(l) & 0xffff))
-#define HIWORD(l) (static_cast<WORD>((static_cast<DWORD_PTR>(l) >> 16) & 0xffff))
-#define LOBYTE(w) (static_cast<BYTE>(static_cast<DWORD_PTR>(w) & 0xff))
-#define HIBYTE(w) (static_cast<BYTE>((static_cast<DWORD_PTR>(w) >> 8) & 0xff))
-#define MAKEWORD(a, b) (static_cast<WORD>((static_cast<BYTE>(a)) | (static_cast<WORD>(static_cast<BYTE>(b)) << 8)))
-#define MAKELONG(a, b) (static_cast<LONG>((static_cast<WORD>(a)) | (static_cast<DWORD>(static_cast<WORD>(b)) << 16)))
-#define MAKEWPARAM(l, h) (static_cast<WPARAM>(static_cast<DWORD>(MAKELONG(l, h))))
-#define MAKELPARAM(l, h) (static_cast<LPARAM>(static_cast<DWORD>(MAKELONG(l, h))))
-#define MAKELRESULT(l, h) (static_cast<LRESULT>(static_cast<DWORD>(MAKELONG(l, h))))
-#define GET_X_LPARAM(lp) (static_cast<int>(static_cast<short>(LOWORD(lp))))
-#define GET_Y_LPARAM(lp) (static_cast<int>(static_cast<short>(HIWORD(lp))))
-#define GET_WHEEL_DELTA_WPARAM(wParam) (static_cast<short>(HIWORD(wParam)))
+#define MAKEWORD(a, b) ((WORD)(((BYTE)(((DWORD_PTR)(a)) & 0xff)) | ((WORD)((BYTE)(((DWORD_PTR)(b)) & 0xff))) << 8))
+#define MAKELONG(a, b) ((LONG)(((WORD)(((DWORD_PTR)(a)) & 0xffff)) | ((DWORD)((WORD)(((DWORD_PTR)(b)) & 0xffff))) << 16))
+#define LOWORD(l) ((WORD)(((DWORD_PTR)(l)) & 0xffff))
+#define HIWORD(l) ((WORD)((((DWORD_PTR)(l)) >> 16) & 0xffff))
+#define LOBYTE(w) ((BYTE)(((DWORD_PTR)(w)) & 0xff))
+#define HIBYTE(w) ((BYTE)((((DWORD_PTR)(w)) >> 8) & 0xff))
+#define MAKEWPARAM(l, h) ((WPARAM)(DWORD)MAKELONG(l, h))
+#define MAKELPARAM(l, h) ((LPARAM)(DWORD)MAKELONG(l, h))
+#define MAKELRESULT(l, h) ((LRESULT)(DWORD)MAKELONG(l, h))
+#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
+#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
+#define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))
 #define GET_KEYSTATE_WPARAM(wParam) (LOWORD(wParam))
 #define GET_XBUTTON_WPARAM(wParam) (HIWORD(wParam))
-#define MAKEINTRESOURCEA(i) (reinterpret_cast<LPSTR>(static_cast<ULONG_PTR>(static_cast<WORD>(i))))
-#define MAKEINTRESOURCEW(i) (reinterpret_cast<LPWSTR>(static_cast<ULONG_PTR>(static_cast<WORD>(i))))
+#define MAKEINTRESOURCEA(i) ((LPSTR)((ULONG_PTR)((WORD)(i))))
+#define MAKEINTRESOURCEW(i) ((LPWSTR)((ULONG_PTR)((WORD)(i))))
 #define MAKEINTRESOURCE MAKEINTRESOURCEW
-#define IS_INTRESOURCE(r) ((static_cast<ULONG_PTR>(reinterpret_cast<uintptr_t>(r)) >> 16) == 0)
+#define IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)
 #define RT_RCDATA MAKEINTRESOURCEW(10)
-#define RGB(r, g, b) (static_cast<COLORREF>((static_cast<BYTE>(r) | (static_cast<WORD>(static_cast<BYTE>(g)) << 8)) | (static_cast<DWORD>(static_cast<BYTE>(b)) << 16)))
+#define RGB(r, g, b) ((COLORREF)(((BYTE)(r) | ((WORD)((BYTE)(g)) << 8)) | (((DWORD)(BYTE)(b)) << 16)))
 #define GetRValue(rgb) (LOBYTE(rgb))
-#define GetGValue(rgb) (LOBYTE((static_cast<WORD>(rgb)) >> 8))
+#define GetGValue(rgb) (LOBYTE(((WORD)(rgb)) >> 8))
 #define GetBValue(rgb) (LOBYTE((rgb) >> 16))
 #ifndef SUCCEEDED
-#define SUCCEEDED(hr) ((static_cast<HRESULT>(hr)) >= 0)
+#define SUCCEEDED(hr) (((HRESULT)(hr)) >= 0)
 #endif
 #ifndef FAILED
-#define FAILED(hr) ((static_cast<HRESULT>(hr)) < 0)
+#define FAILED(hr) (((HRESULT)(hr)) < 0)
 #endif
 #ifndef S_OK
-#define S_OK (static_cast<HRESULT>(0))
+#define S_OK ((HRESULT)0L)
 #endif
 #ifndef S_FALSE
-#define S_FALSE (static_cast<HRESULT>(1))
+#define S_FALSE ((HRESULT)1L)
 #endif
 #ifndef E_FAIL
-#define E_FAIL (static_cast<HRESULT>(0x80004005L))
+#define E_FAIL ((HRESULT)0x80004005L)
 #endif
 #ifndef E_NOTIMPL
-#define E_NOTIMPL (static_cast<HRESULT>(0x80004001L))
+#define E_NOTIMPL ((HRESULT)0x80004001L)
 #endif
 #ifndef E_INVALIDARG
-#define E_INVALIDARG (static_cast<HRESULT>(0x80070057L))
+#define E_INVALIDARG ((HRESULT)0x80070057L)
 #endif
 #ifndef E_OUTOFMEMORY
-#define E_OUTOFMEMORY (static_cast<HRESULT>(0x8007000EL))
+#define E_OUTOFMEMORY ((HRESULT)0x8007000EL)
 #endif
 #define UNREFERENCED_PARAMETER(P) (void)(P)
 #define ZeroMemory(Destination, Length) memset((Destination), 0, (Length))

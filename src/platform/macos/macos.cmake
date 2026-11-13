@@ -172,35 +172,31 @@ file(GLOB_RECURSE TS_MAC_SOURCES CONFIGURE_DEPENDS
 )
 list(FILTER TS_MAC_SOURCES EXCLUDE REGEX "/bootstrap/macos_entry\\.cpp$")
 
-add_library(Toolscreen SHARED
+# Sources compile as an object library that does not depend on the GLEW/ImGui
+# library targets, so one build reports every compile error.
+add_library(toolscreen_objects OBJECT
     ${TS_SOURCES}
     ${TS_MAC_SOURCES}
     ${TOOLSCREEN_MACOS_DIR}/third_party/fishhook/fishhook.c
     ${TS_EMBEDDED_RESOURCES_CPP}
-    # Linked last: its initializer must run after every other one (see the file).
-    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
-)
-
-set_target_properties(Toolscreen PROPERTIES
-    PREFIX ""
-    SUFFIX ".dylib"
-    OUTPUT_NAME "Toolscreen"
-    INSTALL_NAME_DIR "@rpath"
-    BUILD_WITH_INSTALL_NAME_DIR ON
 )
 
 # The macOS include directory comes first so <Windows.h> and <GL/glew.h>
 # resolve to the compatibility headers.
-target_include_directories(Toolscreen PRIVATE
+target_include_directories(toolscreen_objects PRIVATE
     ${TOOLSCREEN_MACOS_DIR}/include
     ${TOOLSCREEN_GENERATED_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${nlohmann_json_SOURCE_DIR}/single_include
     ${cpp_httplib_SOURCE_DIR}
     ${vulkan_headers_SOURCE_DIR}/include
+    ${TOOLSCREEN_IMGUI_DIR}
+    ${TOOLSCREEN_IMGUI_DIR}/backends
+    ${TOOLSCREEN_IMGUI_DIR}/misc/cpp
+    ${glew_SOURCE_DIR}/include
 )
 
-target_compile_definitions(Toolscreen PRIVATE
+set(TS_COMPILE_DEFINITIONS
     TOOLSCREEN_EXPORTS
     TOOLSCREEN_MACOS
     CMAKE_BUILD
@@ -210,15 +206,31 @@ target_compile_definitions(Toolscreen PRIVATE
     NOMINMAX
     UNICODE
     _UNICODE
+    IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
 )
-
-target_compile_options(Toolscreen PRIVATE ${TS_MAC_COMPILE_OPTIONS})
+target_compile_definitions(toolscreen_objects PRIVATE ${TS_COMPILE_DEFINITIONS})
+target_compile_options(toolscreen_objects PRIVATE ${TS_MAC_COMPILE_OPTIONS})
 set(TS_MAC_OBJC_SOURCES ${TS_MAC_SOURCES})
 list(FILTER TS_MAC_OBJC_SOURCES INCLUDE REGEX "\\.mm$")
 set_source_files_properties(${TS_MAC_OBJC_SOURCES} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 set_source_files_properties(
     ${TOOLSCREEN_MACOS_DIR}/third_party/fishhook/fishhook.c
     PROPERTIES COMPILE_OPTIONS "-w"
+)
+
+add_library(Toolscreen SHARED
+    $<TARGET_OBJECTS:toolscreen_objects>
+    # Linked last: its initializer must run after every other one (see the file).
+    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
+)
+target_compile_options(Toolscreen PRIVATE ${TS_MAC_COMPILE_OPTIONS})
+
+set_target_properties(Toolscreen PROPERTIES
+    PREFIX ""
+    SUFFIX ".dylib"
+    OUTPUT_NAME "Toolscreen"
+    INSTALL_NAME_DIR "@rpath"
+    BUILD_WITH_INSTALL_NAME_DIR ON
 )
 
 target_link_libraries(Toolscreen PRIVATE
