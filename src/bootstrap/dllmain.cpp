@@ -499,6 +499,14 @@ template <typename T> bool CreateHookOrDie(LPVOID pTarget, LPVOID pDetour, T** p
     return true;
 }
 
+#if defined(__APPLE__)
+// MSVC converts function pointers to void* implicitly; clang needs it spelled out.
+template <typename Target, typename Detour, typename T>
+bool CreateHookOrDie(Target pTarget, Detour pDetour, T** ppOriginal, const char* hookName) {
+    return CreateHookOrDie(reinterpret_cast<LPVOID>(pTarget), reinterpret_cast<LPVOID>(pDetour), ppOriginal, hookName);
+}
+#endif
+
 // REQUIRES: g_configMutex and g_hotkeyMainKeysMutex must already be held by caller
 void RebuildHotkeyMainKeys_Internal() {
     g_hotkeyMainKeys.clear();

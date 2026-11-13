@@ -544,7 +544,7 @@ void LoadConfig() {
 
     RemoveStaleConfigTempFiles(g_toolscreenPath);
     RemoveStaleConfigTempFiles(g_toolscreenPath + TS_PATH_SEP L"profiles");
-    ExtractBundledFontAssets(std::filesystem::path(g_toolscreenPath), &LoadConfig);
+    ExtractBundledFontAssets(std::filesystem::path(g_toolscreenPath), reinterpret_cast<const void*>(&LoadConfig));
     LoadSystemFontAssets();
 
     try {

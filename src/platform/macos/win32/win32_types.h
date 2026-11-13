@@ -150,7 +150,9 @@ typedef HICON HCURSOR; // HICONs and HCURSORs are interchangeable, as in the SDK
 typedef void* HGDIOBJ;
 typedef HANDLE HGLOBAL;
 typedef HANDLE HINTERNET;
-typedef intptr_t (*FARPROC)(void);
+// Windows declares FARPROC as a function pointer; MSVC lets the shared code
+// pass it as void*, which clang does not, so it is void* here.
+typedef void* FARPROC;
 typedef FARPROC PROC;
 
 #define INVALID_HANDLE_VALUE (reinterpret_cast<HANDLE>(static_cast<intptr_t>(-1)))

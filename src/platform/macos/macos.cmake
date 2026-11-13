@@ -271,11 +271,26 @@ if(NOT EXISTS "${TS_LIBLOGGER_DYLIB}")
 endif()
 
 # --- package -----------------------------------------------------------------------------
+# Toolscreen-<version>-macos.jar: the installer with both dylibs embedded.
+find_package(Java 17 COMPONENTS Development REQUIRED)
 set(TS_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
+set(TS_INSTALLER_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
+set(TS_INSTALLER_JAR "${TS_PACKAGE_DIR}/Toolscreen-${TOOLSCREEN_VERSION}-macos.jar")
+set(TS_INSTALLER_VERSION_FILE "${CMAKE_CURRENT_BINARY_DIR}/installer_version.txt")
+file(WRITE "${TS_INSTALLER_VERSION_FILE}" "${TOOLSCREEN_VERSION}")
 add_custom_target(macos_package
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${TS_PACKAGE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${TS_INSTALLER_BUILD_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${TS_INSTALLER_BUILD_DIR}/classes/payload" "${TS_PACKAGE_DIR}"
+    COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -d "${TS_INSTALLER_BUILD_DIR}/classes"
+        "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:Toolscreen>" "${TS_INSTALLER_BUILD_DIR}/classes/payload/Toolscreen.dylib"
+    COMMAND ${CMAKE_COMMAND} -E copy "${TS_LIBLOGGER_DYLIB}" "${TS_INSTALLER_BUILD_DIR}/classes/payload/liblogger.dylib"
+    COMMAND ${CMAKE_COMMAND} -E copy "${TS_INSTALLER_VERSION_FILE}" "${TS_INSTALLER_BUILD_DIR}/classes/payload/version.txt"
+    COMMAND ${Java_JAR_EXECUTABLE} --create --file "${TS_INSTALLER_JAR}" --main-class com.toolscreen.macos.Installer
+        -C "${TS_INSTALLER_BUILD_DIR}/classes" .
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Toolscreen>" "${TS_PACKAGE_DIR}/Toolscreen.dylib"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${TS_LIBLOGGER_DYLIB}" "${TS_PACKAGE_DIR}/liblogger.dylib"
-    DEPENDS Toolscreen
-    COMMENT "Collecting macOS release files"
+    DEPENDS Toolscreen "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java"
+    COMMENT "Building the macOS installer"
+    VERBATIM
 )
