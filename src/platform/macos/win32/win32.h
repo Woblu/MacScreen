@@ -138,6 +138,10 @@ typedef struct _MEMORY_BASIC_INFORMATION {
 #define MEM_FREE 0x00010000
 #define MEM_IMAGE 0x01000000
 #define MEM_PRIVATE 0x00020000
+#define MEM_MAPPED 0x00040000
+#define FILE_MAP_WRITE 0x0002
+#define FILE_MAP_READ 0x0004
+#define FILE_MAP_ALL_ACCESS 0x000F001F
 #define PAGE_NOACCESS 0x01
 #define PAGE_READONLY 0x02
 #define PAGE_READWRITE 0x04
@@ -953,7 +957,11 @@ FARPROC wglGetProcAddress(LPCSTR name);
 BOOL wglMakeCurrent(HDC hdc, HGLRC context);
 BOOL SwapBuffers(HDC hdc);
 
-// --- registry (always reports "not found") --------------------------------------------
+// --- registry ---------------------------------------------------------------------------
+// Only the OBS Virtual Camera's class registration is answered (see kernel32.cpp);
+// every other key reports "not found".
+#define HKEY_CLASSES_ROOT (reinterpret_cast<HKEY>(static_cast<uintptr_t>(0x80000000u)))
+#define KEY_READ 0x20019
 LONG RegOpenKeyExA(HKEY key, LPCSTR subKey, DWORD options, DWORD desired, HKEY* result);
 LONG RegCloseKey(HKEY key);
 

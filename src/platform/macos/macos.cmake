@@ -70,6 +70,7 @@ find_library(TS_COREGRAPHICS CoreGraphics REQUIRED)
 find_library(TS_COREFOUNDATION CoreFoundation REQUIRED)
 find_library(TS_COREVIDEO CoreVideo REQUIRED)
 find_library(TS_COREMEDIA CoreMedia REQUIRED)
+find_library(TS_COREMEDIAIO CoreMediaIO REQUIRED)
 find_library(TS_SCREENCAPTUREKIT ScreenCaptureKit REQUIRED)
 find_library(TS_UTTYPES UniformTypeIdentifiers REQUIRED)
 find_library(TS_WEBKIT WebKit REQUIRED)
@@ -163,7 +164,6 @@ endforeach()
 
 # Windows-only modules; their macOS counterparts live in this directory.
 list(FILTER TS_SOURCES EXCLUDE REGEX "/src/features/browser_overlay\\.cpp$")
-list(FILTER TS_SOURCES EXCLUDE REGEX "/src/features/virtual_camera\\.cpp$")
 list(FILTER TS_SOURCES EXCLUDE REGEX "/src/hooks/hook_chain\\.cpp$")
 
 file(GLOB_RECURSE TS_MAC_SOURCES CONFIGURE_DEPENDS
@@ -246,6 +246,7 @@ target_link_libraries(Toolscreen PRIVATE
     ${TS_COREFOUNDATION}
     ${TS_COREVIDEO}
     ${TS_COREMEDIA}
+    ${TS_COREMEDIAIO}
     ${TS_SCREENCAPTUREKIT}
     ${TS_UTTYPES}
     ${TS_WEBKIT}

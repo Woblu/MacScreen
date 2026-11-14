@@ -2,6 +2,7 @@
 
 #include "platform/macos/win32/win32.h"
 
+#include "platform/macos/os/mac_obs_virtual_camera.h"
 #include "platform/macos/os/mac_os.h"
 #include "platform/macos/win32/resources.h"
 #include "platform/macos/win32/win32_internal.h"
@@ -25,6 +26,8 @@
 #include <sched.h>
 #include <signal.h>
 #include <string>
+#include <strings.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <thread>
@@ -41,7 +44,7 @@ uint64_t NowSteadyNs() { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW); }
 
 // --- kernel objects ------------------------------------------------------------
 
-enum class ObjType : uint32_t { File = 1, Event, Timer, Thread, Process, Global };
+enum class ObjType : uint32_t { File = 1, Event, Timer, Thread, Process, Global, Mapping };
 
 struct KObject {
     static constexpr uint32_t kMagic = 0x54534B4F; // 'TSKO'
@@ -96,6 +99,41 @@ struct ProcessObj : KObject {
 struct GlobalObj {
     size_t size = 0;
     std::vector<uint8_t> data;
+};
+
+// Page-file-backed sections (CreateFileMappingW with INVALID_HANDLE_VALUE).
+// Names are shared within this process only.
+struct Section {
+    std::wstring name;
+    void* base = nullptr;
+    size_t size = 0;
+    int refs = 0; // open handles + mapped views
+};
+
+// The section Toolscreen writes OBS Virtual Camera frames into; OBS's Windows
+// camera driver reads it, and on macOS MacObsVirtualCamera does.
+constexpr wchar_t kObsVirtualCameraSection[] = L"OBSVirtualCamVideo";
+
+std::mutex g_sectionsMutex;
+std::vector<Section*> g_sections;
+
+void ReleaseSection(Section* section) {
+    {
+        std::lock_guard<std::mutex> lock(g_sectionsMutex);
+        if (--section->refs > 0) return;
+        g_sections.erase(std::remove(g_sections.begin(), g_sections.end(), section), g_sections.end());
+    }
+    if (section->name == kObsVirtualCameraSection) MacObsVirtualCamera::Detach(section->base);
+    munmap(section->base, section->size);
+    delete section;
+}
+
+struct MappingObj : KObject {
+    Section* section = nullptr;
+    MappingObj() : KObject(ObjType::Mapping) {}
+    ~MappingObj() override {
+        if (section) ReleaseSection(section);
+    }
 };
 
 KObject* AsObject(HANDLE h) {
@@ -936,7 +974,27 @@ LPSTR GetCommandLineA(void) {
 
 // --- memory -----------------------------------------------------------------------------------
 
-SIZE_T VirtualQuery(LPCVOID, PMEMORY_BASIC_INFORMATION, SIZE_T) { return 0; }
+// Answers for mapped sections only.
+SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T length) {
+    if (!buffer || length < sizeof(MEMORY_BASIC_INFORMATION)) return 0;
+    const auto* target = static_cast<const uint8_t*>(address);
+    std::lock_guard<std::mutex> lock(g_sectionsMutex);
+    for (const Section* section : g_sections) {
+        const auto* begin = static_cast<const uint8_t*>(section->base);
+        if (target < begin || target >= begin + section->size) continue;
+        const size_t page = static_cast<size_t>(getpagesize());
+        *buffer = {};
+        buffer->BaseAddress = section->base;
+        buffer->AllocationBase = section->base;
+        buffer->AllocationProtect = PAGE_READWRITE;
+        buffer->RegionSize = (section->size + page - 1) / page * page;
+        buffer->State = MEM_COMMIT;
+        buffer->Protect = PAGE_READWRITE;
+        buffer->Type = MEM_MAPPED;
+        return sizeof(MEMORY_BASIC_INFORMATION);
+    }
+    return 0;
+}
 
 HGLOBAL GlobalAlloc(UINT flags, SIZE_T bytes) {
     GlobalObj* g = new GlobalObj();
@@ -1534,18 +1592,103 @@ DWORD GetFullPathNameW(LPCWSTR name, DWORD size, LPWSTR buffer, LPWSTR* filePart
     return result;
 }
 
-HANDLE CreateFileMappingW(HANDLE, LPSECURITY_ATTRIBUTES, DWORD, DWORD, DWORD, LPCWSTR) {
-    t_lastError = ERROR_ACCESS_DENIED;
-    return nullptr;
+HANDLE CreateFileMappingW(HANDLE file, LPSECURITY_ATTRIBUTES, DWORD, DWORD sizeHigh, DWORD sizeLow, LPCWSTR name) {
+    if (file != INVALID_HANDLE_VALUE) {
+        t_lastError = ERROR_NOT_SUPPORTED;
+        return nullptr;
+    }
+    const size_t size = (static_cast<size_t>(sizeHigh) << 32) | sizeLow;
+    if (size == 0) {
+        t_lastError = ERROR_INVALID_PARAMETER;
+        return nullptr;
+    }
+
+    Section* section = nullptr;
+    bool existed = false;
+    {
+        std::lock_guard<std::mutex> lock(g_sectionsMutex);
+        if (name) {
+            for (Section* candidate : g_sections) {
+                if (candidate->name == name) {
+                    section = candidate;
+                    break;
+                }
+            }
+        }
+        if (section) {
+            existed = true;
+            ++section->refs;
+        } else {
+            void* base = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+            if (base == MAP_FAILED) {
+                t_lastError = ERROR_NOT_ENOUGH_MEMORY;
+                return nullptr;
+            }
+            section = new Section();
+            section->name = name ? name : L"";
+            section->base = base;
+            section->size = size;
+            section->refs = 1;
+            g_sections.push_back(section);
+        }
+    }
+
+    if (!existed && section->name == kObsVirtualCameraSection) MacObsVirtualCamera::Attach(section->base, section->size);
+
+    MappingObj* mapping = new MappingObj();
+    mapping->section = section;
+    t_lastError = existed ? ERROR_ALREADY_EXISTS : ERROR_SUCCESS;
+    return mapping;
 }
 
-HANDLE OpenFileMappingW(DWORD, BOOL, LPCWSTR) {
+HANDLE OpenFileMappingW(DWORD, BOOL, LPCWSTR name) {
+    std::lock_guard<std::mutex> lock(g_sectionsMutex);
+    for (Section* section : g_sections) {
+        if (name && section->name == name) {
+            ++section->refs;
+            MappingObj* mapping = new MappingObj();
+            mapping->section = section;
+            return mapping;
+        }
+    }
     t_lastError = ERROR_FILE_NOT_FOUND;
     return nullptr;
 }
 
-LPVOID MapViewOfFile(HANDLE, DWORD, DWORD, DWORD, SIZE_T) { return nullptr; }
-BOOL UnmapViewOfFile(LPCVOID) { return FALSE; }
+// Views always start at offset 0 and cover the whole section.
+LPVOID MapViewOfFile(HANDLE handle, DWORD, DWORD offsetHigh, DWORD offsetLow, SIZE_T) {
+    MappingObj* mapping = As<MappingObj>(handle, ObjType::Mapping);
+    if (!mapping) {
+        t_lastError = ERROR_INVALID_HANDLE;
+        return nullptr;
+    }
+    if (offsetHigh != 0 || offsetLow != 0) {
+        t_lastError = ERROR_NOT_SUPPORTED;
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(g_sectionsMutex);
+    ++mapping->section->refs;
+    return mapping->section->base;
+}
+
+BOOL UnmapViewOfFile(LPCVOID base) {
+    Section* section = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_sectionsMutex);
+        for (Section* candidate : g_sections) {
+            if (candidate->base == base) {
+                section = candidate;
+                break;
+            }
+        }
+    }
+    if (!section) {
+        t_lastError = ERROR_INVALID_PARAMETER;
+        return FALSE;
+    }
+    ReleaseSection(section);
+    return TRUE;
+}
 
 // --- shlwapi / shell32 / ole32 -----------------------------------------------------------------------------
 
@@ -1670,8 +1813,18 @@ BOOL SymSetSearchPath(HANDLE, PCSTR) { return TRUE; }
 
 // --- registry -------------------------------------------------------------------------------------------
 
-LONG RegOpenKeyExA(HKEY, LPCSTR, DWORD, DWORD, HKEY* result) {
+// The class registration of OBS's Windows virtual camera, which upstream opens
+// to see whether OBS Virtual Camera is installed. On macOS that camera is
+// OBS's camera extension, so the key exists when the extension's device does.
+constexpr char kObsVirtualCameraClassKey[] = "CLSID\\{A3FCE0F5-3493-419F-958A-ABA1250EC20B}";
+
+LONG RegOpenKeyExA(HKEY key, LPCSTR subKey, DWORD, DWORD, HKEY* result) {
     if (result) *result = nullptr;
+    if (key == HKEY_CLASSES_ROOT && subKey && strcasecmp(subKey, kObsVirtualCameraClassKey) == 0 &&
+        MacObsVirtualCamera::IsAvailable()) {
+        if (result) *result = HKEY_CLASSES_ROOT;
+        return ERROR_SUCCESS;
+    }
     return ERROR_FILE_NOT_FOUND;
 }
 
