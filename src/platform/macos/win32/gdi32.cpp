@@ -48,6 +48,7 @@ struct DcObject : GdiObject {
 struct BrushObject : GdiObject {
     COLORREF color = 0;
     bool stock = false;
+    bool hollow = false; // NULL_BRUSH paints nothing
     BrushObject() : GdiObject(GdiType::Brush) {}
 };
 
@@ -681,6 +682,7 @@ int FillRect(HDC hdc, const RECT* rect, HBRUSH brush) {
     BrushObject* br = As<BrushObject>(brush, GdiType::Brush);
     BitmapObject* b = dc ? As<BitmapObject>(dc->selected, GdiType::Bitmap) : nullptr;
     if (!b || !br || !rect || b->bitsPerPixel != 32) return 0;
+    if (br->hollow) return 1;
     for (int y = std::max(0, static_cast<int>(rect->top)); y < std::min(b->height, static_cast<int>(rect->bottom)); ++y) {
         for (int x = std::max(0, static_cast<int>(rect->left)); x < std::min(b->width, static_cast<int>(rect->right)); ++x) {
             uint8_t* p = &b->pixels[(static_cast<size_t>(y) * b->width + x) * 4];
@@ -694,15 +696,23 @@ int FillRect(HDC hdc, const RECT* rect, HBRUSH brush) {
 }
 
 HGDIOBJ GetStockObject(int index) {
-    static BrushObject white, black, nullBrush;
+    static BrushObject white, lightGray, gray, darkGray, black, nullBrush;
     static std::once_flag once;
     std::call_once(once, [] {
-        white.stock = black.stock = nullBrush.stock = true;
+        // Windows stock brush colors.
+        white.stock = lightGray.stock = gray.stock = darkGray.stock = black.stock = nullBrush.stock = true;
         white.color = RGB(255, 255, 255);
+        lightGray.color = RGB(192, 192, 192);
+        gray.color = RGB(128, 128, 128);
+        darkGray.color = RGB(64, 64, 64);
         black.color = RGB(0, 0, 0);
+        nullBrush.hollow = true;
     });
     switch (index) {
     case WHITE_BRUSH: return &white;
+    case LTGRAY_BRUSH: return &lightGray;
+    case GRAY_BRUSH: return &gray;
+    case DKGRAY_BRUSH: return &darkGray;
     case BLACK_BRUSH: return &black;
     case NULL_BRUSH: return &nullBrush;
     default: return nullptr;

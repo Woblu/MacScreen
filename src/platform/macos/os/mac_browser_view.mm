@@ -102,7 +102,7 @@ void DestroyHost(TSBrowserOverlayHost* host) {
 
 } // namespace
 
-void Create(const std::string& id, int width, int height, Callbacks callbacks, std::function<void(bool created)> done) {
+void Create(std::string id, int width, int height, Callbacks callbacks, std::function<void(bool created)> done) {
     OnMain(^{
       @autoreleasepool {
           NSString* key = ToNSString(id);
@@ -154,7 +154,7 @@ void Create(const std::string& id, int width, int height, Callbacks callbacks, s
     });
 }
 
-void Destroy(const std::string& id) {
+void Destroy(std::string id) {
     OnMain(^{
       @autoreleasepool {
           NSString* key = ToNSString(id);
@@ -166,26 +166,26 @@ void Destroy(const std::string& id) {
     });
 }
 
-void SetSize(const std::string& id, int width, int height) {
+void SetSize(std::string id, int width, int height) {
     OnMain(^{
       if (TSBrowserOverlayHost* host = HostFor(id)) ApplySize(host, width, height);
     });
 }
 
-void SetTransparentBackground(const std::string& id, bool transparent) {
+void SetTransparentBackground(std::string id, bool transparent) {
     OnMain(^{
       if (TSBrowserOverlayHost* host = HostFor(id)) CallBoolSetter(host->_webView, @"_setDrawsBackground:", transparent ? NO : YES);
     });
 }
 
-void SetMuted(const std::string& id, bool muted) {
+void SetMuted(std::string id, bool muted) {
     OnMain(^{
       // _WKMediaAudioMuted
       if (TSBrowserOverlayHost* host = HostFor(id)) CallUIntegerSetter(host->_webView, @"_setPageMuted:", muted ? 1u : 0u);
     });
 }
 
-void Navigate(const std::string& id, const std::string& url) {
+void Navigate(std::string id, std::string url) {
     OnMain(^{
       @autoreleasepool {
           TSBrowserOverlayHost* host = HostFor(id);
@@ -203,7 +203,7 @@ void Navigate(const std::string& id, const std::string& url) {
     });
 }
 
-void Reload(const std::string& id) {
+void Reload(std::string id) {
     OnMain(^{
       @autoreleasepool {
           TSBrowserOverlayHost* host = HostFor(id);
@@ -224,7 +224,7 @@ void Reload(const std::string& id) {
     });
 }
 
-void ExecuteScript(const std::string& id, const std::string& script) {
+void ExecuteScript(std::string id, std::string script) {
     OnMain(^{
       @autoreleasepool {
           if (TSBrowserOverlayHost* host = HostFor(id)) [host->_webView evaluateJavaScript:ToNSString(script) completionHandler:nil];
@@ -232,7 +232,7 @@ void ExecuteScript(const std::string& id, const std::string& script) {
     });
 }
 
-void Capture(const std::string& id, std::function<void(Snapshot snapshot)> done) {
+void Capture(std::string id, std::function<void(Snapshot snapshot)> done) {
     OnMain(^{
       @autoreleasepool {
           TSBrowserOverlayHost* host = HostFor(id);

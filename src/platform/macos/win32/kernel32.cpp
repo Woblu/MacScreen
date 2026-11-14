@@ -136,6 +136,20 @@ struct MappingObj : KObject {
     }
 };
 
+// Wakes WaitForMultipleObjects whenever an event is set, a timer is armed or a
+// thread exits, so it can sleep instead of polling.
+std::mutex g_anySignalMutex;
+std::condition_variable g_anySignalCv;
+uint64_t g_anySignalGeneration = 0;
+
+void NotifyAnySignal() {
+    {
+        std::lock_guard<std::mutex> lock(g_anySignalMutex);
+        ++g_anySignalGeneration;
+    }
+    g_anySignalCv.notify_all();
+}
+
 KObject* AsObject(HANDLE h) {
     if (!h || h == INVALID_HANDLE_VALUE) return nullptr;
     const uintptr_t v = reinterpret_cast<uintptr_t>(h);
@@ -299,6 +313,7 @@ void* ThreadEntry(void* arg) {
         t->signaled = true;
     }
     t->cv.notify_all();
+    NotifyAnySignal();
     if (t->refs.fetch_sub(1) == 1) delete t;
     return nullptr;
 }
@@ -561,15 +576,17 @@ ULONGLONG VerSetConditionMask(ULONGLONG, DWORD, BYTE) { return 0; }
 DWORD GetTickCount(void) { return static_cast<DWORD>(NowSteadyNs() / 1000000ull); }
 ULONGLONG GetTickCount64(void) { return NowSteadyNs() / 1000000ull; }
 
+// 10 MHz, the frequency Windows reports: upstream multiplies the counter by
+// 10^7, which overflows within an hour at a 1 GHz frequency.
 BOOL QueryPerformanceCounter(LARGE_INTEGER* count) {
     if (!count) return FALSE;
-    count->QuadPart = static_cast<LONGLONG>(NowSteadyNs());
+    count->QuadPart = static_cast<LONGLONG>(NowSteadyNs() / 100);
     return TRUE;
 }
 
 BOOL QueryPerformanceFrequency(LARGE_INTEGER* frequency) {
     if (!frequency) return FALSE;
-    frequency->QuadPart = 1000000000LL;
+    frequency->QuadPart = 10000000LL;
     return TRUE;
 }
 
@@ -816,6 +833,7 @@ BOOL SetEvent(HANDLE event) {
     }
     if (e->manualReset) e->cv.notify_all();
     else e->cv.notify_one();
+    NotifyAnySignal();
     return TRUE;
 }
 
@@ -860,6 +878,7 @@ BOOL SetWaitableTimer(HANDLE timer, const LARGE_INTEGER* dueTime, LONG, PTIMERAP
         t->signaled = false;
     }
     t->cv.notify_all();
+    NotifyAnySignal();
     return TRUE;
 }
 
@@ -896,16 +915,52 @@ DWORD WaitForSingleObject(HANDLE handle, DWORD milliseconds) {
 DWORD WaitForMultipleObjects(DWORD count, const HANDLE* handles, BOOL waitAll, DWORD milliseconds) {
     const uint64_t deadline = milliseconds == INFINITE ? UINT64_MAX : NowSteadyNs() + uint64_t(milliseconds) * 1000000ull;
     for (;;) {
+        uint64_t generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_anySignalMutex);
+            generation = g_anySignalGeneration;
+        }
+
         DWORD signaledCount = 0;
+        uint64_t wakeNs = deadline;
+        bool timerWake = false;
         for (DWORD i = 0; i < count; ++i) {
             if (WaitForSingleObject(handles[i], 0) == WAIT_OBJECT_0) {
                 if (!waitAll) return WAIT_OBJECT_0 + i;
                 ++signaledCount;
+                continue;
+            }
+            if (TimerObj* timer = As<TimerObj>(handles[i], ObjType::Timer)) {
+                std::lock_guard<std::mutex> lock(timer->mutex);
+                if (timer->armed && timer->dueNs < wakeNs) {
+                    wakeNs = timer->dueNs;
+                    timerWake = true;
+                }
+            } else if (As<ProcessObj>(handles[i], ObjType::Process)) {
+                // Process exit is not signalled; check again shortly.
+                wakeNs = std::min(wakeNs, NowSteadyNs() + 10000000ull);
             }
         }
         if (waitAll && signaledCount == count) return WAIT_OBJECT_0;
-        if (NowSteadyNs() >= deadline) return WAIT_TIMEOUT;
-        Sleep(1);
+
+        const uint64_t now = NowSteadyNs();
+        if (now >= deadline) return WAIT_TIMEOUT;
+        if (wakeNs <= now) continue;
+        if (timerWake && wakeNs - now < 1500000ull) {
+            // Like WaitOn: finish the last stretch before a timer in short sleeps.
+            struct timespec ts { 0, 100000 };
+            nanosleep(&ts, nullptr);
+            continue;
+        }
+
+        std::unique_lock<std::mutex> lock(g_anySignalMutex);
+        const auto changed = [&] { return g_anySignalGeneration != generation; };
+        if (wakeNs == UINT64_MAX) {
+            g_anySignalCv.wait(lock, changed);
+        } else {
+            const uint64_t sleepNs = timerWake ? wakeNs - now - 1000000ull : wakeNs - now;
+            g_anySignalCv.wait_for(lock, std::chrono::nanoseconds(sleepNs), changed);
+        }
     }
 }
 
@@ -1743,19 +1798,29 @@ HRESULT SHGetFolderPathW(HWND, int csidl, HANDLE, DWORD, LPWSTR path) {
     return S_OK;
 }
 
+// As on Windows, the result is also left in GetLastError(); upstream checks
+// GetLastError() == ERROR_ALREADY_EXISTS for an existing folder.
 int SHCreateDirectoryExW(HWND, LPCWSTR path, const SECURITY_ATTRIBUTES*) {
     const std::string full = NarrowPath(path);
+    int result = ERROR_SUCCESS;
     struct stat st {};
-    if (stat(full.c_str(), &st) == 0) return S_ISDIR(st.st_mode) ? ERROR_ALREADY_EXISTS : ERROR_FILE_EXISTS;
-    std::string current;
-    size_t pos = 0;
-    while (pos != std::string::npos) {
-        pos = full.find('/', pos + 1);
-        current = full.substr(0, pos);
-        if (current.empty()) continue;
-        if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) return static_cast<int>(ErrnoToWin32(errno));
+    if (stat(full.c_str(), &st) == 0) {
+        result = S_ISDIR(st.st_mode) ? ERROR_ALREADY_EXISTS : ERROR_FILE_EXISTS;
+    } else {
+        std::string current;
+        size_t pos = 0;
+        while (pos != std::string::npos) {
+            pos = full.find('/', pos + 1);
+            current = full.substr(0, pos);
+            if (current.empty()) continue;
+            if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST) {
+                result = static_cast<int>(ErrnoToWin32(errno));
+                break;
+            }
+        }
     }
-    return ERROR_SUCCESS;
+    t_lastError = static_cast<DWORD>(result);
+    return result;
 }
 
 int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa) {

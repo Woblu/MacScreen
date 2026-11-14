@@ -2,6 +2,7 @@
 
 #include "platform/macos/hooks/symbol_hooks.h"
 #include "platform/macos/os/mac_os.h"
+#include "platform/macos/render/gl_bridge.h"
 #include "platform/macos/win32/gdi_internal.h"
 #include "platform/macos/win32/keymap.h"
 #include "platform/macos/win32/user32_internal.h"
@@ -206,7 +207,12 @@ void DeliverKey(int macKeyCode, unsigned vk, unsigned scan, int action, LPARAM e
                      (injected ? LLKHF_INJECTED : 0);
         info.time = GetTickCount();
         info.dwExtraInfo = static_cast<ULONG_PTR>(extraInfo);
-        if (MacWin32::RunLowLevelKeyboardHooks(msg, info)) return;
+        if (MacWin32::RunLowLevelKeyboardHooks(msg, info)) {
+            // A swallowed key's replacement is posted; Windows delivers posted
+            // messages before later input.
+            if (!MacWin32::InDispatch()) MacWin32::PumpMessages();
+            return;
+        }
     }
 
     MacWin32::SetKeyDown(vk, down);
@@ -222,6 +228,10 @@ void DeliverKey(int macKeyCode, unsigned vk, unsigned scan, int action, LPARAM e
     Deliver(msg, MacKeymap::GenericVk(vk), lParam, extraInfo);
 }
 
+void DeliverGameKey(int key, int scancode, int action);
+
+bool WindowFocused() { return MacWin32::GetWindowSnapshot(g_state.hwnd).key; }
+
 void KeyCallback(void* window, int key, int scancode, int action, int mods) {
     (void)mods;
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
@@ -229,12 +239,16 @@ void KeyCallback(void* window, int key, int scancode, int action, int mods) {
 
     unsigned vk = MacKeymap::VkFromMacKeyCode(scancode);
     unsigned scan = MacKeymap::ScanCodeFromMacKeyCode(scancode);
+    if (action == kRelease && !WindowFocused()) {
+        // GLFW releases held keys after the window loses focus. On Windows those
+        // key-ups go to the newly focused window; the game's keys were already
+        // released on WM_KILLFOCUS (see GlfwWndProc).
+        if (vk != 0) MacWin32::SetKeyDown(vk, false);
+        return;
+    }
     if (vk == 0 || scan == 0) {
         // Keys Windows has no equivalent for go straight to the game.
-        if (g_state.game.key && key >= 0 && key <= kKeyLast) {
-            g_state.gameKeys[key] = action != kRelease;
-            g_state.game.key(window, key, scancode, action, GameMods());
-        }
+        DeliverGameKey(key, scancode, action);
         return;
     }
 
@@ -284,6 +298,11 @@ void MouseButtonCallback(void* window, int button, int action, int mods) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
     if (window != g_state.window) return;
     static const unsigned kVk[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 };
+    if (action == kRelease && !WindowFocused()) {
+        // As for keys: the game's buttons were released on WM_KILLFOCUS.
+        if (button >= 0 && button <= 4) MacWin32::SetKeyDown(kVk[button], false);
+        return;
+    }
     if (button < 0 || button > 4) {
         if (g_state.game.mouseButton && button <= kMouseButtonLast) {
             g_state.gameButtons[button] = action == kPress;
@@ -420,8 +439,12 @@ int GlfwKeyForMessage(WPARAM wParam, LPARAM lParam, int& macKeyCode) {
     return MacKeymap::GlfwKeyFromScanCode(scan);
 }
 
+// Same filtering as GLFW's _glfwInputKey: a release for a key the game has as
+// up is dropped, and a press for a key it has as down becomes a repeat.
 void DeliverGameKey(int key, int scancode, int action) {
     if (key < 0 || key > kKeyLast) return;
+    if (action == kRelease && !g_state.gameKeys[key]) return;
+    if (action == kPress && g_state.gameKeys[key]) action = kRepeat;
     g_state.gameKeys[key] = action != kRelease;
     if (g_state.game.key) g_state.game.key(g_state.window, key, scancode, action, GameMods());
 }
@@ -448,6 +471,8 @@ void DeliverGameCursor(double x, double y) {
 
 LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (hwnd != g_state.hwnd) return 0;
+    // Everything below calls into the game.
+    const MacGlBridge::ScopedGameContext gameContext;
     switch (msg) {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
@@ -455,10 +480,9 @@ LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_SYSKEYUP: {
         int macKeyCode = -1;
         const int key = GlfwKeyForMessage(wParam, lParam, macKeyCode);
+        // Like GLFW's Win32 backend: repeats are presses of a key already down.
         const bool up = (msg == WM_KEYUP || msg == WM_SYSKEYUP);
-        int action = up ? kRelease : ((lParam & (1 << 30)) ? kRepeat : kPress);
-        if (!up && action == kRepeat && key >= 0 && key <= kKeyLast && !g_state.gameKeys[key]) action = kPress;
-        DeliverGameKey(key, macKeyCode >= 0 ? macKeyCode : 0, action);
+        DeliverGameKey(key, macKeyCode >= 0 ? macKeyCode : 0, up ? kRelease : kPress);
         return 0;
     }
     case WM_CHAR:
@@ -508,6 +532,13 @@ LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return 0;
     case WM_KILLFOCUS:
         if (g_state.game.focus) g_state.game.focus(g_state.window, 0);
+        // GLFW releases every key and button it reported as pressed.
+        for (int key = 0; key <= kKeyLast; ++key) {
+            if (g_state.gameKeys[key]) DeliverGameKey(key, std::max(0, MacKeymap::MacKeyCodeFromGlfwKey(key)), kRelease);
+        }
+        for (int button = 0; button <= kMouseButtonLast; ++button) {
+            if (g_state.gameButtons[button]) DeliverGameButton(button, kRelease);
+        }
         return 0;
     case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT) {
@@ -622,7 +653,18 @@ void OnWin32CursorVisibility(bool visible) {
         g_state.forcedVisible = false;
         if (GameHidesCursor()) {
             MacOs::HideCursor();
-            if (g_state.cursorMode == kCursorDisabled) MacOs::SetCursorAssociated(false);
+            if (g_state.cursorMode == kCursorDisabled) {
+                // GLFW keeps a disabled cursor at the centre of the window (its
+                // Win32 backend re-centres it every poll), so it is never left
+                // over another app where Toolscreen's GUI released it.
+                RECT client{};
+                if (GetClientRect(g_state.hwnd, &client)) {
+                    POINT center{ client.right / 2, client.bottom / 2 };
+                    ClientToScreen(g_state.hwnd, &center);
+                    MacOs::WarpCursor(center.x, center.y);
+                }
+                MacOs::SetCursorAssociated(false);
+            }
         }
         g_state.haveRaw = false;
     }
@@ -938,6 +980,9 @@ void SetInputModeThroughBridge(void* window, int mode, int value) {
                 g_state.forcedVisible = false;
                 MacOs::HideCursor();
             }
+            // GLFW's Win32 backend releases its cursor clip when the cursor
+            // becomes normal; Toolscreen's GUI sets one when it closes in-game.
+            if (value == kCursorNormal && g_state.cursorMode != kCursorNormal) ClipCursor(nullptr);
             g_state.cursorMode = value;
             g_state.haveRaw = false;
         }

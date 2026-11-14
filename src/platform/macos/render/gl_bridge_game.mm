@@ -170,6 +170,21 @@ unsigned ScreenFramebuffer() { return g_screenFramebuffer.load(std::memory_order
 
 void* ToolscreenContext() { return g_toolscreenContext; }
 
+ScopedGameContext::ScopedGameContext() {
+    if (!t_toolscreenCurrent || !g_gameContext) return;
+    glFlush();
+    CGLSetCurrentContext(g_gameContext);
+    t_toolscreenCurrent = false;
+    switched_ = true;
+}
+
+ScopedGameContext::~ScopedGameContext() {
+    if (!switched_) return;
+    glFlush();
+    CGLSetCurrentContext(g_toolscreenContext);
+    t_toolscreenCurrent = true;
+}
+
 bool EnsureToolscreenContext(void* gameCglContext) {
     std::lock_guard<std::mutex> lock(g_contextMutex);
     if (g_toolscreenContext) return true;
@@ -204,6 +219,11 @@ bool BeginToolscreenFrame(int framebufferWidth, int framebufferHeight, unsigned 
         g_gameCopy = SharedSurface{};
         g_gameReadFramebuffer = 0;
     }
+
+    // On Windows, Toolscreen reads the game's last viewport (e.g. for overlay
+    // dragging); Toolscreen's own context starts with a 0x0 one.
+    GLint gameViewport[4] = { 0, 0, framebufferWidth, framebufferHeight };
+    glGetIntegerv(GL_VIEWPORT, gameViewport);
 
     {
         GameStateGuard guard;
@@ -249,6 +269,7 @@ bool BeginToolscreenFrame(int framebufferWidth, int framebufferHeight, unsigned 
     }
 
     MacGlBridgeCore::BindScreen(g_screen.core);
+    glViewport(gameViewport[0], gameViewport[1], gameViewport[2], gameViewport[3]);
     return true;
 }
 

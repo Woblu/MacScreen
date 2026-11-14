@@ -4,7 +4,7 @@ A macOS port of [Toolscreen](https://github.com/jojoe77777/Toolscreen), the scre
 
 The settings, config files and in-game interface are the same as Toolscreen on Windows. This is an unofficial port; it is not made or supported by the Toolscreen developers.
 
-> **Not approved by [speedrun.com](https://www.speedrun.com/mc) or [MCSR Ranked](https://mcsrranked.com/).** Don't use it for runs you submit or in ranked matches unless it has been approved.
+> **Not approved by [speedrun.com](https://www.speedrun.com/mc) or [MCSR Ranked](https://mcsrranked.com/).** Don't use it for runs you submit or in ranked matches unless it has been approved. Libraries injected into the game have to be on the [legal DLL list](https://github.com/Minecraft-Java-Edition-Speedrunning/legal-builds/blob/main/legal-dlls.csv) (rule A.8.16), and this macOS build is not on it.
 
 <p align="center">
   <img src="docs/images/screenshot.png" alt="Toolscreen screenshot" width="800">
@@ -44,7 +44,7 @@ The settings, config files and in-game interface are the same as Toolscreen on W
 4. Follow the on-screen instructions. If the launcher is running, the installer asks to restart it.
 5. Launch Minecraft and look for the Toolscreen popup in the top-left corner
 
-The installer copies Toolscreen to `~/.config/toolscreen/dlls` and adds `-agentpath:` with that path to the instance's JVM arguments. It saves the instance's previous Java settings so **Uninstall** can put them back.
+The installer copies Toolscreen and [LibLogger](https://github.com/jojoe77777/Toolscreen/tree/main/liblogger) to `~/.config/toolscreen/dlls` and sets the instance's wrapper command (Settings → Custom commands) to `/usr/bin/env DYLD_INSERT_LIBRARIES=<liblogger.dylib>:<Toolscreen.dylib>`, so the game starts with both injected, LibLogger first. This is the macOS counterpart of the DLL injection the Windows installer sets up. The instance's previous custom commands are saved so **Uninstall** can put them back.
 
 ## Configuration
 

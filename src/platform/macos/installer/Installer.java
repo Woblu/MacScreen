@@ -41,12 +41,17 @@ import javax.swing.UIManager;
  * Toolscreen installer for macOS (Prism Launcher / MultiMC).
  *
  * Copies Toolscreen.dylib and liblogger.dylib to ~/.config/toolscreen/dlls and
- * adds "-agentpath:<Toolscreen.dylib>" to the instance's JVM arguments, so the
- * game loads Toolscreen at startup. Run it again to uninstall.
+ * sets the instance's wrapper command so the game starts with both libraries
+ * injected through DYLD_INSERT_LIBRARIES, LibLogger first: the macOS
+ * counterpart of the Windows DLL injector. Run it again to uninstall.
  */
 public final class Installer {
     private static final String PROJECT_NAME = "Toolscreen";
-    private static final String AGENT_PREFIX = "-agentpath:";
+    private static final String ENV_COMMAND = "/usr/bin/env";
+    private static final String INSERT_VARIABLE = "DYLD_INSERT_LIBRARIES=";
+    // The first macOS build (1.5.2-macos.1) loaded Toolscreen as a JVM agent;
+    // installing or uninstalling removes that.
+    private static final String LEGACY_AGENT_PREFIX = "-agentpath:";
     private static final String DYLIB_NAME = "Toolscreen.dylib";
     private static final String LOGGER_NAME = "liblogger.dylib";
 
@@ -74,24 +79,27 @@ public final class Installer {
         }
 
         try {
-            List<String> lines = Files.readAllLines(instanceCfg.toPath(), StandardCharsets.UTF_8);
-            File dllDir = dllDirectory();
-            String agentArg = AGENT_PREFIX + new File(dllDir, DYLIB_NAME).getAbsolutePath();
-
             if (!ensureLauncherClosed(instanceDir)) return;
 
+            List<String> lines = Files.readAllLines(instanceCfg.toPath(), StandardCharsets.UTF_8);
+            File dllDir = dllDirectory();
             extractPayload(dllDir);
+
             InstanceSettings settings = InstanceSettings.parse(lines);
-            if (!settings.hasToolscreenAgent()) {
+            undoLegacyAgentInstall(instanceDir, settings);
+            if (!settings.hasToolscreenWrapper()) {
                 saveRestoreState(instanceDir, settings);
-                if (!settings.overrideJavaArgs()) {
-                    // Overriding JVM arguments stops the global ones from applying,
+                if (!settings.overrideCommands()) {
+                    // Overriding custom commands stops the global ones from applying,
                     // so carry them over into the instance.
-                    settings.setJvmArgs(globalJvmArgs(instanceDir));
-                    settings.setOverrideJavaArgs(true);
+                    InstanceSettings global = globalSettings(instanceDir);
+                    settings.setPreLaunchCommand(global.preLaunchCommand());
+                    settings.setWrapperCommand(global.wrapperCommand());
+                    settings.setPostExitCommand(global.postExitCommand());
                 }
             }
-            settings.setToolscreenAgent(agentArg);
+            settings.setOverrideCommands(true);
+            settings.setToolscreenWrapper(injectionCommand(dllDir));
             Files.write(instanceCfg.toPath(), settings.lines(), StandardCharsets.UTF_8);
             reopenLauncher();
 
@@ -108,15 +116,19 @@ public final class Installer {
             if (!ensureLauncherClosed(instanceDir)) return "Close the launcher first.";
             List<String> lines = Files.readAllLines(instanceCfg.toPath(), StandardCharsets.UTF_8);
             InstanceSettings settings = InstanceSettings.parse(lines);
-            settings.removeToolscreenAgent();
+            undoLegacyAgentInstall(instanceDir, settings);
+            settings.removeToolscreenWrapper();
             Properties state = loadRestoreState(instanceDir);
-            if (state != null) {
-                settings.setOverrideJavaArgs(Boolean.parseBoolean(state.getProperty("overrideJavaArgs", "false")));
-                if (!Boolean.parseBoolean(state.getProperty("overrideJavaArgs", "false"))) {
-                    settings.setJvmArgs(state.getProperty("jvmArgs", ""));
+            if (state != null && state.getProperty("overrideCommands") != null) {
+                boolean override = Boolean.parseBoolean(state.getProperty("overrideCommands"));
+                settings.setOverrideCommands(override);
+                if (!override) {
+                    settings.setPreLaunchCommand(state.getProperty("preLaunchCommand", ""));
+                    settings.setWrapperCommand(state.getProperty("wrapperCommand", ""));
+                    settings.setPostExitCommand(state.getProperty("postExitCommand", ""));
                 }
-                deleteRestoreState(instanceDir);
             }
+            deleteRestoreState(instanceDir);
             Files.write(instanceCfg.toPath(), settings.lines(), StandardCharsets.UTF_8);
             reopenLauncher();
             return null;
@@ -142,6 +154,24 @@ public final class Installer {
         return new File(new File(new File(System.getProperty("user.home"), ".config"), "toolscreen"), "dlls");
     }
 
+    /** "/usr/bin/env DYLD_INSERT_LIBRARIES=<liblogger>:<Toolscreen>". */
+    private static String injectionCommand(File dllDir) {
+        String libraries = new File(dllDir, LOGGER_NAME).getAbsolutePath() + ":" + new File(dllDir, DYLIB_NAME).getAbsolutePath();
+        return InstanceSettings.joinArgs(List.of(ENV_COMMAND, INSERT_VARIABLE + libraries));
+    }
+
+    /** Removes the JVM agent the first macOS build added and restores the Java arguments it changed. */
+    private static void undoLegacyAgentInstall(File instanceDir, InstanceSettings settings) {
+        if (!settings.removeLegacyToolscreenAgent()) return;
+        Properties state = loadRestoreState(instanceDir);
+        if (state != null && state.getProperty("overrideJavaArgs") != null) {
+            boolean override = Boolean.parseBoolean(state.getProperty("overrideJavaArgs"));
+            settings.setOverrideJavaArgs(override);
+            if (!override) settings.setJvmArgs(state.getProperty("jvmArgs", ""));
+            deleteRestoreState(instanceDir);
+        }
+    }
+
     private static File instanceDirectory() {
         try {
             File jar = new File(Installer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -151,21 +181,21 @@ public final class Installer {
         }
     }
 
-    /** JvmArgs from the launcher's global settings (two folders above the instance). */
-    private static String globalJvmArgs(File instanceDir) {
+    /** The launcher's global settings (two folders above the instance); empty if not found. */
+    private static InstanceSettings globalSettings(File instanceDir) {
         File dataDir = instanceDir.getParentFile() == null ? null : instanceDir.getParentFile().getParentFile();
-        if (dataDir == null) return "";
-        for (String name : new String[] { "prismlauncher.cfg", "multimc.cfg", "polymc.cfg" }) {
-            File cfg = new File(dataDir, name);
-            if (!cfg.isFile()) continue;
-            try {
-                InstanceSettings global = InstanceSettings.parse(Files.readAllLines(cfg.toPath(), StandardCharsets.UTF_8));
-                return global.jvmArgs();
-            } catch (IOException ignored) {
-                return "";
+        if (dataDir != null) {
+            for (String name : new String[] { "prismlauncher.cfg", "multimc.cfg", "polymc.cfg" }) {
+                File cfg = new File(dataDir, name);
+                if (!cfg.isFile()) continue;
+                try {
+                    return InstanceSettings.parse(Files.readAllLines(cfg.toPath(), StandardCharsets.UTF_8));
+                } catch (IOException ignored) {
+                    break;
+                }
             }
         }
-        return "";
+        return InstanceSettings.parse(List.of());
     }
 
     // --- restore state ---------------------------------------------------------------------
@@ -178,8 +208,10 @@ public final class Installer {
     private static void saveRestoreState(File instanceDir, InstanceSettings settings) throws IOException {
         Properties p = new Properties();
         p.setProperty("instance", instanceDir.getAbsolutePath());
-        p.setProperty("overrideJavaArgs", Boolean.toString(settings.overrideJavaArgs()));
-        p.setProperty("jvmArgs", settings.jvmArgs());
+        p.setProperty("overrideCommands", Boolean.toString(settings.overrideCommands()));
+        p.setProperty("preLaunchCommand", settings.preLaunchCommand());
+        p.setProperty("wrapperCommand", settings.wrapperCommand());
+        p.setProperty("postExitCommand", settings.postExitCommand());
         File file = stateFile(instanceDir);
         Files.createDirectories(file.getParentFile().toPath());
         try (var out = Files.newOutputStream(file.toPath())) {
@@ -247,10 +279,12 @@ public final class Installer {
         launcherAppToReopen = null;
     }
 
+    /** Matches the executable inside the app bundle, e.g. "Prism Launcher.app/Contents/MacOS/prismlauncher". */
     private static Optional<ProcessHandle> findLauncherProcess() {
         return ProcessHandle.allProcesses().filter(p -> {
             String command = p.info().command().orElse("").toLowerCase();
-            return command.contains("prismlauncher.app/") || command.contains("multimc.app/") || command.contains("polymc.app/");
+            return command.endsWith(".app/contents/macos/prismlauncher") || command.endsWith(".app/contents/macos/multimc")
+                || command.endsWith(".app/contents/macos/polymc");
         }).findFirst();
     }
 
@@ -475,8 +509,36 @@ public final class Installer {
             return lines;
         }
 
-        boolean overrideJavaArgs() {
-            return "true".equalsIgnoreCase(get("OverrideJavaArgs"));
+        boolean overrideCommands() {
+            return "true".equalsIgnoreCase(decode(get("OverrideCommands")));
+        }
+
+        void setOverrideCommands(boolean value) {
+            set("OverrideCommands", Boolean.toString(value));
+        }
+
+        String preLaunchCommand() {
+            return decode(get("PreLaunchCommand"));
+        }
+
+        void setPreLaunchCommand(String value) {
+            set("PreLaunchCommand", encode(value));
+        }
+
+        String wrapperCommand() {
+            return decode(get("WrapperCommand"));
+        }
+
+        void setWrapperCommand(String value) {
+            set("WrapperCommand", encode(value));
+        }
+
+        String postExitCommand() {
+            return decode(get("PostExitCommand"));
+        }
+
+        void setPostExitCommand(String value) {
+            set("PostExitCommand", encode(value));
         }
 
         void setOverrideJavaArgs(boolean value) {
@@ -484,39 +546,77 @@ public final class Installer {
         }
 
         String jvmArgs() {
-            return unquote(get("JvmArgs"));
+            return decode(get("JvmArgs"));
         }
 
         void setJvmArgs(String value) {
-            set("JvmArgs", quote(value));
+            set("JvmArgs", encode(value));
         }
 
-        boolean hasToolscreenAgent() {
+        boolean hasToolscreenWrapper() {
+            return toolscreenWrapperIndex(splitArgs(wrapperCommand())) >= 0;
+        }
+
+        /** Appends the injection after any wrapper the user already has, replacing an older one. */
+        void setToolscreenWrapper(String injection) {
+            List<String> args = withoutToolscreenWrapper(splitArgs(wrapperCommand()));
+            args.addAll(splitArgs(injection));
+            setWrapperCommand(joinArgs(args));
+        }
+
+        void removeToolscreenWrapper() {
+            if (hasToolscreenWrapper()) setWrapperCommand(joinArgs(withoutToolscreenWrapper(splitArgs(wrapperCommand()))));
+        }
+
+        /** Returns true if a JVM agent from the first macOS build was removed. */
+        boolean removeLegacyToolscreenAgent() {
+            List<String> kept = new ArrayList<>();
+            boolean removed = false;
             for (String arg : splitArgs(jvmArgs())) {
-                if (isToolscreenAgent(arg)) return true;
+                if (arg.startsWith(LEGACY_AGENT_PREFIX) && arg.endsWith("/" + DYLIB_NAME)) {
+                    removed = true;
+                } else {
+                    kept.add(arg);
+                }
             }
-            return false;
+            if (removed) setJvmArgs(joinArgs(kept));
+            return removed;
         }
 
-        void setToolscreenAgent(String agentArg) {
-            List<String> args = new ArrayList<>();
-            for (String arg : splitArgs(jvmArgs())) {
-                if (!isToolscreenAgent(arg)) args.add(arg);
+        /** Index of "/usr/bin/env" followed by our DYLD_INSERT_LIBRARIES, or -1. */
+        private static int toolscreenWrapperIndex(List<String> args) {
+            for (int i = 0; i + 1 < args.size(); i++) {
+                String next = args.get(i + 1);
+                if (args.get(i).equals(ENV_COMMAND) && next.startsWith(INSERT_VARIABLE) && next.contains("/" + DYLIB_NAME)) return i;
             }
-            args.add(agentArg);
-            setJvmArgs(joinArgs(args));
+            return -1;
         }
 
-        void removeToolscreenAgent() {
-            List<String> args = new ArrayList<>();
-            for (String arg : splitArgs(jvmArgs())) {
-                if (!isToolscreenAgent(arg)) args.add(arg);
+        private static List<String> withoutToolscreenWrapper(List<String> args) {
+            List<String> kept = new ArrayList<>(args);
+            int index = toolscreenWrapperIndex(kept);
+            if (index >= 0) {
+                kept.remove(index + 1);
+                kept.remove(index);
             }
-            setJvmArgs(joinArgs(args));
+            return kept;
         }
 
-        private static boolean isToolscreenAgent(String arg) {
-            return arg.startsWith(AGENT_PREFIX) && arg.endsWith("/" + DYLIB_NAME);
+        /**
+         * Prism Launcher writes instance.cfg with QSettings (a [General] section,
+         * quotes where needed); MultiMC writes plain key=value lines and keeps
+         * quotes literally.
+         */
+        private boolean isQSettingsFormat() {
+            return sectionStart("General") >= 0;
+        }
+
+        private String encode(String value) {
+            String escaped = value.replace("\\", "\\\\");
+            if (!isQSettingsFormat()) return escaped.replace("\n", "\\n").replace("\t", "\\t").replace("#", "\\#");
+            boolean needsQuotes = value.indexOf(',') >= 0 || value.indexOf(';') >= 0 || value.indexOf('"') >= 0
+                || (!value.isEmpty() && (Character.isWhitespace(value.charAt(0)) || Character.isWhitespace(value.charAt(value.length() - 1))));
+            return needsQuotes ? "\"" + escaped.replace("\"", "\\\"") + "\"" : escaped;
         }
 
         private int sectionStart(String name) {
@@ -555,21 +655,26 @@ public final class Installer {
                     return;
                 }
             }
-            if (general < 0) {
+            if (general >= 0) {
+                lines.add(general + 1, key + "=" + value);
+            } else if (lines.stream().anyMatch(l -> l.trim().startsWith("["))) {
+                // Sections but no [General]: top-level keys belong in [General].
+                lines.add(0, key + "=" + value);
                 lines.add(0, "[General]");
-                general = 0;
+            } else {
+                lines.add(key + "=" + value);
             }
-            lines.add(general + 1, key + "=" + value);
         }
 
-        /** QSettings writes values containing special characters in double quotes. */
-        private static String unquote(String raw) {
+        /** Reverses QSettings quoting and the backslash escapes both launchers write. */
+        private static String decode(String raw) {
             String v = raw.trim();
-            if (v.length() < 2 || !v.startsWith("\"") || !v.endsWith("\"")) return v;
+            boolean quoted = v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"");
+            if (quoted) v = v.substring(1, v.length() - 1);
             StringBuilder out = new StringBuilder();
-            for (int i = 1; i < v.length() - 1; i++) {
+            for (int i = 0; i < v.length(); i++) {
                 char c = v.charAt(i);
-                if (c == '\\' && i + 1 < v.length() - 1) {
+                if (c == '\\' && i + 1 < v.length()) {
                     char n = v.charAt(++i);
                     out.append(n == 'n' ? '\n' : n == 't' ? '\t' : n);
                 } else {
@@ -577,10 +682,6 @@ public final class Installer {
                 }
             }
             return out.toString();
-        }
-
-        private static String quote(String value) {
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
         }
 
         private static List<String> splitArgs(String s) {

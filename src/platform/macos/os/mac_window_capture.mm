@@ -201,6 +201,24 @@ void Scale(const Frame& src, int width, int height, uint8_t* dst, size_t dstStri
 
 namespace MacWindowCapture {
 
+namespace {
+
+// Also stops idle sessions after the last window overlay is removed, when
+// CopyFrame is no longer called.
+void EnsureIdleTimerLocked() {
+    static dispatch_source_t timer = nil;
+    if (timer) return;
+    timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), 2 * NSEC_PER_SEC, NSEC_PER_SEC / 2);
+    dispatch_source_set_event_handler(timer, ^{
+      std::lock_guard<std::mutex> lock(g_sessionsMutex);
+      StopIdleSessionsLocked(NowMs());
+    });
+    dispatch_resume(timer);
+}
+
+} // namespace
+
 bool CopyFrame(uint32_t windowId, int width, int height, uint8_t* bgra, size_t stride) {
     if (windowId == 0 || width <= 0 || height <= 0 || !bgra) return false;
     std::shared_ptr<Session> session;
@@ -208,6 +226,7 @@ bool CopyFrame(uint32_t windowId, int width, int height, uint8_t* bgra, size_t s
         std::lock_guard<std::mutex> lock(g_sessionsMutex);
         const uint64_t now = NowMs();
         StopIdleSessionsLocked(now);
+        EnsureIdleTimerLocked();
         auto it = g_sessions.find(windowId);
         if (it == g_sessions.end()) {
             session = std::make_shared<Session>();

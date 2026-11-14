@@ -4,6 +4,7 @@
 #include "platform/macos/win32/user32_internal.h"
 
 #include "platform/macos/os/mac_os.h"
+#include "platform/macos/render/gl_bridge.h"
 #include "platform/macos/win32/gdi_internal.h"
 #include "platform/macos/win32/keymap.h"
 #include "platform/macos/win32/win32_internal.h"
@@ -1523,7 +1524,14 @@ HRESULT DwmGetColorizationColor(DWORD*, BOOL*) { return E_FAIL; }
 
 // --- wgl ---------------------------------------------------------------------------------------------------
 
-HGLRC wglGetCurrentContext(void) { return static_cast<HGLRC>(CGLGetCurrentContext()); }
+// Upstream renders only in Toolscreen's context (see render/gl_bridge.h). The
+// game's context reads as "no context", so code that runs outside the frame
+// (e.g. cursor textures loaded on WM_SETCURSOR) waits for Toolscreen's context
+// instead of creating objects in the game's.
+HGLRC wglGetCurrentContext(void) {
+    void* current = CGLGetCurrentContext();
+    return current && current == MacGlBridge::ToolscreenContext() ? static_cast<HGLRC>(current) : nullptr;
+}
 
 HDC wglGetCurrentDC(void) {
     HWND game = MacWin32::GameWindow();

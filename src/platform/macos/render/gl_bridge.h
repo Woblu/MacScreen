@@ -39,4 +39,19 @@ bool EnsureToolscreenContext(void* gameCglContext);
 // Toolscreen's CGL context, or nullptr before EnsureToolscreenContext succeeded.
 void* ToolscreenContext();
 
+// Makes the game's context current for its lifetime if Toolscreen's context is
+// current on this thread. The game's callbacks can run synchronously from
+// Toolscreen's frame (e.g. the settings GUI resizing the window delivers the
+// game's framebuffer-size callback); on Windows there is only one context.
+class ScopedGameContext {
+public:
+    ScopedGameContext();
+    ~ScopedGameContext();
+    ScopedGameContext(const ScopedGameContext&) = delete;
+    ScopedGameContext& operator=(const ScopedGameContext&) = delete;
+
+private:
+    bool switched_ = false;
+};
+
 } // namespace MacGlBridge

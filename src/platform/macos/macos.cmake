@@ -170,6 +170,7 @@ file(GLOB_RECURSE TS_MAC_SOURCES CONFIGURE_DEPENDS
     "${TOOLSCREEN_MACOS_DIR}/*.cpp"
     "${TOOLSCREEN_MACOS_DIR}/*.mm"
 )
+list(FILTER TS_MAC_SOURCES EXCLUDE REGEX "/bootstrap/macos_entry\\.cpp$")
 
 # Sources compile as an object library that does not depend on the GLEW/ImGui
 # library targets, so one build reports every compile error.
@@ -212,7 +213,7 @@ target_compile_options(toolscreen_objects PRIVATE
     ${TS_MAC_COMPILE_OPTIONS}
     -ferror-limit=0
     # Fills C++20 library gaps in Apple's libc++ (see the header).
-    "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-include ${TOOLSCREEN_MACOS_DIR}/include/ts_macos_prelude.h>"
+    "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-include \"${TOOLSCREEN_MACOS_DIR}/include/ts_macos_prelude.h\">"
 )
 # The shared sources rely on MSVC conversions (e.g. function pointer to void*).
 set_source_files_properties(${TS_SOURCES} PROPERTIES COMPILE_OPTIONS "-fms-extensions;-Wno-microsoft-cast;-Wno-microsoft-template;-Wno-microsoft-goto;-Wno-microsoft-exception-spec;-Wno-ignored-attributes;-Wno-keyword-macro")
@@ -224,10 +225,14 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-w"
 )
 
-add_library(Toolscreen SHARED $<TARGET_OBJECTS:toolscreen_objects>)
+add_library(Toolscreen SHARED
+    $<TARGET_OBJECTS:toolscreen_objects>
+    # Linked last: its initializer must run after every other one (see the file).
+    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
+)
+target_compile_options(Toolscreen PRIVATE ${TS_MAC_COMPILE_OPTIONS})
 
 set_target_properties(Toolscreen PROPERTIES
-    LINKER_LANGUAGE CXX
     PREFIX ""
     SUFFIX ".dylib"
     OUTPUT_NAME "Toolscreen"
