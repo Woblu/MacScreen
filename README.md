@@ -1,11 +1,10 @@
-# Toolscreen
+# Toolscreen for macOS
 
-![GitHub release](https://img.shields.io/github/v/release/jojoe77777/Toolscreen)
-[![Discord](https://img.shields.io/discord/1472102343381352539?label=discord&logo=discord)](https://discord.gg/A2v6bCJg6K)
+A macOS port of [Toolscreen](https://github.com/jojoe77777/Toolscreen), the screen mirroring and overlay tool for Minecraft Java Edition speedrunning. Resize your game, add overlays, and use EyeZoom — all without OBS projectors or leaving fullscreen.
 
-A screen mirroring and overlay tool for Minecraft Java Edition speedrunning. Resize your game, add overlays, and use EyeZoom — all without OBS projectors or leaving fullscreen.
+The settings, config files and in-game interface are the same as Toolscreen on Windows. This is an unofficial port; it is not made or supported by the Toolscreen developers.
 
-> **Windows 10/11 only** · Fully legal for [speedrun.com](https://www.speedrun.com/mc) and [MCSR Ranked](https://mcsrranked.com/)
+> **Not approved by [speedrun.com](https://www.speedrun.com/mc) or [MCSR Ranked](https://mcsrranked.com/).** Don't use it for runs you submit or in ranked matches unless it has been approved.
 
 <p align="center">
   <img src="docs/images/screenshot.png" alt="Toolscreen screenshot" width="800">
@@ -21,33 +20,31 @@ A screen mirroring and overlay tool for Minecraft Java Edition speedrunning. Res
 - **Key Rebinding** — Remap keys and configure custom input behavior
 - **Hotkey System** — Bind mode switching, overlay toggling, and sensitivity adjustments to any key
 
+### Differences from Windows
+
+- Minecraft 26.2 and newer are not supported.
+- The Windows mouse speed setting has no effect.
+- Window overlays need the Screen Recording permission (macOS asks the first time).
+- The virtual camera sends to OBS's virtual camera. Start OBS's virtual camera once first so macOS installs it.
+
 ## Requirements
 
-- **Windows 10 or 11** (x64 or ARM64; macOS/Linux are not supported)
+- **macOS 13.3 or newer** (Apple Silicon or Intel)
 - **Java 17+** (needed to run the installer)
-- **Minecraft Java Edition**
-- **Supported launchers:** Prism Launcher, MultiMC, MCSRLauncher
-
-## Download
-
-**[Download the latest release](https://github.com/jojoe77777/Toolscreen/releases/latest)**
-
-You can download either the `.exe` or the `.jar` installer — both do the same thing.
+- **Minecraft Java Edition** 1.13 to 26.1
+- **Supported launchers:** Prism Launcher, MultiMC
 
 ## Installing
 
-> Prefer video? Check out the [video guide](https://www.youtube.com/watch?v=YqS-fxPx_jo)
-> If you're starting speedrunning from scratch, try the [full comprehensive setup guide](https://www.youtube.com/watch?v=l-q-_4R8_6M)
-
-1. Download the [latest release](https://github.com/jojoe77777/Toolscreen/releases/latest)
+1. Download the `.jar` from the latest release
 2. Locate your instance folder:
    - **Prism Launcher**: right-click instance → "Folder"
    - **MultiMC**: right-click instance → "Instance Folder"
-3. Copy the installer (`.exe` or `.jar`) into the instance folder and double-click it
-4. Follow the on-screen instructions — **accept the Windows Defender exclusion prompts**
-
-> If your antivirus blocks the install, temporarily disable it and try again. Toolscreen uses DLL injection which may trigger false positives.
+3. Copy the `.jar` into the instance folder and double-click it (or run `java -jar` on it in Terminal)
+4. Follow the on-screen instructions. If the launcher is running, the installer asks to restart it.
 5. Launch Minecraft and look for the Toolscreen popup in the top-left corner
+
+The installer copies Toolscreen to `~/.config/toolscreen/dlls` and adds `-agentpath:` with that path to the instance's JVM arguments. It saves the instance's previous Java settings so **Uninstall** can put them back.
 
 ## Configuration
 
@@ -60,53 +57,26 @@ Hover over the `(?)` icons for tooltips explaining each setting.
 
 ## Uninstalling
 
-Double-click the Toolscreen installer (`.jar` or `.exe`) and select **Uninstall**.
+Double-click the installer `.jar` in the instance folder and select **Uninstall**. The instance's JVM arguments are restored to what they were before installing.
 
-## Sponsors
+## Reporting problems
 
-<table>
-  <tr>
-    <td width="48" align="center">
-      <img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath logo" width="24">
-    </td>
-    <td>
-      Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>.
-    </td>
-  </tr>
-</table>
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-
-The Windows x64 and ARM64 release binaries built in this repository, including `Toolscreen.dll`, the matching architecture's `liblogger_*.dll`, and the packaged installers, are signed through the GitHub Actions + SignPath trusted-build flow.
-
-- Repository owner: [jojoe77777](https://github.com/jojoe77777)
-- Authors: [jojoe77777](https://github.com/jojoe77777)
-- Committers: [jojoe77777](https://github.com/jojoe77777)
-- Reviewers: [jojoe77777](https://github.com/jojoe77777)
-- Approvers: [jojoe77777](https://github.com/jojoe77777)
-
-This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
-
-When you use the optional downloader or release-update functionality, Toolscreen connects to GitHub release endpoints for this repository. That traffic is governed by the [GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
-
-## Community
-
-Need help or want to share your setup? Join the [Discord server](https://discord.gg/A2v6bCJg6K).
+Report problems with the macOS port in this repository's issues, not in the Toolscreen Discord.
 
 ## Building
 
-Run the manual `Build Liblogger` GitHub Actions workflow once to publish the reusable logger assets. That workflow builds Linux `x64`/`x86`/`arm64`/`arm32`, Windows `x64`/`x86`/`arm64`, and a macOS universal `liblogger.dylib` containing both `x64` and `arm64`. The Windows x64 and ARM64 logger DLLs are code-signed.
+Requires Xcode Command Line Tools, CMake and a JDK 17+.
 
-After that, run `build.bat` for x64 or `build.bat arm64` for ARM64. The script downloads the matching signed logger DLL and PDB, then stages them alongside the Toolscreen artifacts in `out/build/` or `out/build-arm64/` respectively.
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+cmake --build build
+cmake --build build --target macos_package
+```
 
-Run `build.bat --test` to execute the regular local and GitHub test flow.
-Run `build.bat --manual-ninjabrain-tests` to build and run the opt-in Ninjabrain integration suite in its separate manual test tree.
+The installer is written to `build/package/`. All macOS code is in `src/platform/macos`; the rest of the source is upstream Toolscreen.
 
-If you intentionally need to rebuild liblogger locally instead of consuming the published signed artifact, configure CMake with `-DTOOLSCREEN_BUILD_LIBLOGGER_FROM_SOURCE=ON`.
+## Credits
 
-For standalone logger artifacts on non-Windows hosts:
+Toolscreen is made by [jojoe77777](https://github.com/jojoe77777). The macOS port is by [Woblu](https://github.com/Woblu), written with Claude.
 
-- `liblogger/build.sh` builds the Linux `.so` outputs into `liblogger/dist/linux/`
-- `liblogger/build-macos.sh` builds the macOS `.dylib` output into `liblogger/dist/macos/`
+MIT License — see [LICENSE](LICENSE).
