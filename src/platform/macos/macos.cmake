@@ -179,6 +179,8 @@ add_library(toolscreen_objects OBJECT
     ${TS_MAC_SOURCES}
     ${TOOLSCREEN_MACOS_DIR}/third_party/fishhook/fishhook.c
     ${TS_EMBEDDED_RESOURCES_CPP}
+    # Last source, so its initializer runs after every other one (see the file).
+    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
 )
 
 # The macOS include directory comes first so <Windows.h> and <GL/glew.h>
@@ -225,14 +227,10 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-w"
 )
 
-add_library(Toolscreen SHARED
-    $<TARGET_OBJECTS:toolscreen_objects>
-    # Linked last: its initializer must run after every other one (see the file).
-    ${TOOLSCREEN_MACOS_DIR}/bootstrap/macos_entry.cpp
-)
-target_compile_options(Toolscreen PRIVATE ${TS_MAC_COMPILE_OPTIONS})
+add_library(Toolscreen SHARED $<TARGET_OBJECTS:toolscreen_objects>)
 
 set_target_properties(Toolscreen PROPERTIES
+    LINKER_LANGUAGE CXX
     PREFIX ""
     SUFFIX ".dylib"
     OUTPUT_NAME "Toolscreen"
