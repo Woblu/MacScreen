@@ -117,6 +117,8 @@ struct BridgeState {
     double gameCursorX = 0.0;
     double gameCursorY = 0.0;
     bool lockKeyMods = false;
+    // GLFW's modifiers for the click being delivered, or -1.
+    int clickMods = -1;
 
     // Cursor mode the game requested and the bridge applied.
     int cursorMode = kCursorNormal;
@@ -160,6 +162,23 @@ int GameMods() {
     if (g_state.lockKeyMods) {
         if (GetKeyState(VK_CAPITAL) & 1) mods |= kModCapsLock;
         mods |= kModNumLock;
+    }
+    return mods;
+}
+
+// GLFW takes a click's modifiers from the click event. A modifier whose key is
+// held but that the click does not carry was removed outside the game (e.g.
+// so Control+click is not a right click) and stays removed.
+int ClickMods() {
+    int mods = GameMods();
+    if (g_state.clickMods < 0 || !g_real.getKey) return mods;
+    static const int kModifiers[][3] = { { kModShift, kKeyLeftShift, kKeyRightShift },
+                                         { kModControl, kKeyLeftControl, kKeyRightControl },
+                                         { kModAlt, kKeyLeftAlt, kKeyRightAlt },
+                                         { kModSuper, kKeyLeftSuper, kKeyRightSuper } };
+    for (const auto& m : kModifiers) {
+        const bool held = g_real.getKey(g_state.window, m[1]) == kPress || g_real.getKey(g_state.window, m[2]) == kPress;
+        if (held && !(g_state.clickMods & m[0])) mods &= ~m[0];
     }
     return mods;
 }
@@ -294,7 +313,6 @@ POINT CurrentClientPixels() {
 }
 
 void MouseButtonCallback(void* window, int button, int action, int mods) {
-    (void)mods;
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
     if (window != g_state.window) return;
     static const unsigned kVk[] = { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 };
@@ -303,10 +321,14 @@ void MouseButtonCallback(void* window, int button, int action, int mods) {
         if (button >= 0 && button <= 4) MacWin32::SetKeyDown(kVk[button], false);
         return;
     }
+    struct ClickScope {
+        explicit ClickScope(int mods) { g_state.clickMods = mods; }
+        ~ClickScope() { g_state.clickMods = -1; }
+    } clickScope(mods);
     if (button < 0 || button > 4) {
         if (g_state.game.mouseButton && button <= kMouseButtonLast) {
             g_state.gameButtons[button] = action == kPress;
-            g_state.game.mouseButton(window, button, action, GameMods());
+            g_state.game.mouseButton(window, button, action, ClickMods());
         }
         return;
     }
@@ -460,7 +482,7 @@ void DeliverGameChar(uint32_t codepoint, bool plain) {
 void DeliverGameButton(int button, int action) {
     if (button < 0 || button > kMouseButtonLast) return;
     g_state.gameButtons[button] = action == kPress;
-    if (g_state.game.mouseButton) g_state.game.mouseButton(g_state.window, button, action, GameMods());
+    if (g_state.game.mouseButton) g_state.game.mouseButton(g_state.window, button, action, ClickMods());
 }
 
 void DeliverGameCursor(double x, double y) {
