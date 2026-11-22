@@ -211,8 +211,21 @@ set(TS_COMPILE_DEFINITIONS
     IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
 )
 target_compile_definitions(toolscreen_objects PRIVATE ${TS_COMPILE_DEFINITIONS})
+# DLL_PROCESS_DETACH at process exit leaves Toolscreen's threads running
+# because Windows has already ended them. On macOS they still run while exit()
+# destroys globals, so a joinable global std::thread aborts the process.
+# Toolscreen's globals are therefore never destroyed.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-fc++-static-destructors=thread-local" TS_HAS_THREAD_LOCAL_ONLY_DESTRUCTORS)
+if(TS_HAS_THREAD_LOCAL_ONLY_DESTRUCTORS)
+    set(TS_NO_STATIC_DESTRUCTORS "-fc++-static-destructors=thread-local")
+else()
+    set(TS_NO_STATIC_DESTRUCTORS "-fno-c++-static-destructors")
+endif()
+
 target_compile_options(toolscreen_objects PRIVATE
     ${TS_MAC_COMPILE_OPTIONS}
+    "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${TS_NO_STATIC_DESTRUCTORS}>"
     -ferror-limit=0
     # Fills C++20 library gaps in Apple's libc++ (see the header).
     "$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-include \"${TOOLSCREEN_MACOS_DIR}/include/ts_macos_prelude.h\">"
