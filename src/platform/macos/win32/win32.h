@@ -572,6 +572,7 @@ void OutputDebugStringA(LPCSTR text);
 USHORT RtlCaptureStackBackTrace(ULONG framesToSkip, ULONG framesToCapture, PVOID* backTrace, PDWORD backTraceHash);
 #define CaptureStackBackTrace RtlCaptureStackBackTrace
 PVOID RtlPcToFileHeader(PVOID pcValue, PVOID* baseOfImage);
+ULONGLONG VerSetConditionMask(ULONGLONG conditionMask, DWORD typeMask, BYTE condition);
 
 // --- time ---
 DWORD GetTickCount(void);
@@ -866,6 +867,12 @@ FILE* _wfopen(const wchar_t* name, const wchar_t* mode);
 
 // Narrow variants used by the overloads below.
 extern "C" {
+BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags);
+BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists);
+BOOL RemoveDirectoryA(LPCSTR path);
+BOOL PathFileExistsA(LPCSTR path);
+int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa);
+HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags);
 }
 
 // std::filesystem::path::c_str() is a narrow (UTF-8) string on macOS, so the
@@ -886,6 +893,7 @@ inline BOOL PathFileExistsW(const char* path) { return PathFileExistsA(path); }
 inline BOOL PathIsRelativeW(const char* path) { return PathIsRelativeA(path); }
 inline int SHCreateDirectoryExW(HWND hwnd, const char* path, const SECURITY_ATTRIBUTES* sa) { return SHCreateDirectoryExA(hwnd, path, sa); }
 inline HANDLE LoadImageW(HINSTANCE instance, const char* name, UINT type, int cx, int cy, UINT flags) {
+    return LoadImageA(instance, name, type, cx, cy, flags);
 }
 
 // Templated array overloads provided by the MSVC CRT.

@@ -546,6 +546,8 @@ PVOID RtlPcToFileHeader(PVOID pcValue, PVOID* baseOfImage) {
 
 // --- time ---
 
+ULONGLONG VerSetConditionMask(ULONGLONG, DWORD, BYTE) { return 0; }
+
 DWORD GetTickCount(void) { return static_cast<DWORD>(NowSteadyNs() / 1000000ull); }
 ULONGLONG GetTickCount64(void) { return NowSteadyNs() / 1000000ull; }
 
@@ -1354,6 +1356,23 @@ BOOL MoveFileExW(LPCWSTR from, LPCWSTR to, DWORD flags) {
 
 BOOL MoveFileW(LPCWSTR from, LPCWSTR to) { return MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED); }
 
+BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags) {
+    const std::wstring wideFrom = MacWin32::Utf8ToWide(from ? from : "");
+    if (!to) return MoveFileExW(wideFrom.c_str(), nullptr, flags);
+    const std::wstring wideTo = MacWin32::Utf8ToWide(to);
+    return MoveFileExW(wideFrom.c_str(), wideTo.c_str(), flags);
+}
+
+BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists) { return CopyPath(NarrowPath(from), NarrowPath(to), failIfExists != FALSE); }
+
+BOOL RemoveDirectoryA(LPCSTR path) {
+    if (rmdir(NarrowPath(path).c_str()) != 0) {
+        SetErrno(errno);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES) {
     if (mkdir(NarrowPath(path).c_str(), 0755) != 0) {
         t_lastError = (errno == EEXIST) ? ERROR_ALREADY_EXISTS : ErrnoToWin32(errno);
@@ -1489,6 +1508,11 @@ BOOL PathIsRelativeA(LPCSTR path) {
 
 BOOL PathIsRelativeW(LPCWSTR path) { return PathIsRelativeA(MacWin32::WideToUtf8(path ? path : L"").c_str()); }
 
+BOOL PathFileExistsA(LPCSTR path) {
+    struct stat st {};
+    return stat(NarrowPath(path).c_str(), &st) == 0;
+}
+
 HRESULT SHGetKnownFolderPath(REFKNOWNFOLDERID rfid, DWORD, HANDLE, PWSTR* path) {
     if (!path) return E_INVALIDARG;
     *path = nullptr;
@@ -1544,6 +1568,11 @@ int SHCreateDirectoryExW(HWND, LPCWSTR path, const SECURITY_ATTRIBUTES*) {
     }
     t_lastError = static_cast<DWORD>(result);
     return result;
+}
+
+int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa) {
+    const std::wstring wide = MacWin32::Utf8ToWide(path ? path : "");
+    return SHCreateDirectoryExW(hwnd, wide.c_str(), sa);
 }
 
 void CoTaskMemFree(LPVOID pv) { free(pv); }

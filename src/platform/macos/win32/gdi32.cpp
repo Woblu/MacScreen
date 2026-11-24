@@ -380,6 +380,12 @@ HANDLE LoadImageW(HINSTANCE, LPCWSTR name, UINT type, int cx, int cy, UINT flags
     return nullptr;
 }
 
+HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags) {
+    if (IS_INTRESOURCE(name)) return LoadImageW(instance, reinterpret_cast<LPCWSTR>(name), type, cx, cy, flags);
+    const std::wstring wide = MacWin32::Utf8ToWide(name);
+    return LoadImageW(instance, wide.c_str(), type, cx, cy, flags);
+}
+
 HANDLE CopyImage(HANDLE image, UINT, int cx, int cy, UINT flags) {
     MacGdi::CursorObject* src = MacGdi::AsCursor(static_cast<HCURSOR>(image));
     if (!src || src->width <= 0) return nullptr;
