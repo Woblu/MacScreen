@@ -57,7 +57,7 @@ Hover over the `(?)` icons for tooltips explaining each setting.
 
 ## Uninstalling
 
-Double-click the installer `.jar` in the instance folder and select **Uninstall**. The instance's JVM arguments are restored to what they were before installing.
+Double-click the installer `.jar` in the instance folder and select **Uninstall**. The instance's previous custom commands are restored.
 
 ## Reporting problems
 
@@ -73,7 +73,7 @@ cmake --build build
 cmake --build build --target macos_package
 ```
 
-The installer is written to `build/package/`. All macOS code is in `src/platform/macos`; the rest of the source is upstream Toolscreen.
+The installer is written to `build/package/`. The macOS code is in `src/platform/macos`; the shared sources only have small `__APPLE__` changes, listed by `git diff upstream/main -- . ':!src/platform/macos'` with upstream Toolscreen added as the `upstream` remote.
 
 ## Credits
 

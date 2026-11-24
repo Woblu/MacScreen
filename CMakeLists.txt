@@ -24,6 +24,7 @@ set(TOOLSCREEN_INSTALLER_FILE_DESCRIPTION "Toolscreen installer")
 set(TOOLSCREEN_DOWNLOADER_FILE_DESCRIPTION "Toolscreen downloader")
 
 if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version")
     project(Toolscreen VERSION ${TOOLSCREEN_VERSION} LANGUAGES C CXX OBJC OBJCXX)
     include("${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/macos.cmake")
     return()
