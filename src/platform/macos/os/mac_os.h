@@ -52,6 +52,8 @@ double PrimaryDisplayScale();
 // --- windows (NSWindow* passed as void*) -------------------------------------------
 bool WindowContentRect(void* nsWindow, PixelRect& out);
 bool WindowFrameRect(void* nsWindow, PixelRect& out);
+// Pixels per point of the window's OpenGL surface: 1 when its view does not use
+// the backing resolution (GLFW_COCOA_RETINA_FRAMEBUFFER off, as RetiNO sets it).
 double WindowBackingScale(void* nsWindow);
 bool WindowIsKey(void* nsWindow);
 bool WindowIsVisible(void* nsWindow);

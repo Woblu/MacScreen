@@ -269,7 +269,9 @@ bool WindowFrameRect(void* nsWindow, PixelRect& out) {
 double WindowBackingScale(void* nsWindow) {
     if (!nsWindow) return PrimaryDisplayScale();
     return OnMain([&]() -> double {
-        const double s = AsWindow(nsWindow).backingScaleFactor;
+        NSWindow* window = AsWindow(nsWindow);
+        if (!window.contentView.wantsBestResolutionOpenGLSurface) return 1.0;
+        const double s = window.backingScaleFactor;
         return s > 0.0 ? s : 1.0;
     });
 }
