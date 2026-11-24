@@ -32,6 +32,12 @@ bool BeginToolscreenFrame(int framebufferWidth, int framebufferHeight, unsigned 
 // game's default framebuffer and makes the game context current again.
 void EndToolscreenFrame();
 
+// Game context current. Redraws the visible part of the game's frame, which
+// the game drew into a viewport extending past its default framebuffer (e.g.
+// EyeZoom's tall mode). Windows drivers clip such a viewport; on macOS the
+// game's own draw showed the wrong part of the frame.
+void RedrawClippedGameViewport(unsigned gameTexture, const int viewport[4], int framebufferWidth, int framebufferHeight);
+
 // Creates Toolscreen's context next to the given game context and initializes
 // GLEW in it. Safe to call repeatedly. Restores the previously current context.
 bool EnsureToolscreenContext(void* gameCglContext);

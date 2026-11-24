@@ -23,6 +23,34 @@ void* g_macSwapWindow = nullptr;
 GLuint g_macGameTexture = UINT_MAX;
 GLBINDFRAMEBUFFERPROC g_macOglBindFramebufferExt = nullptr;
 
+// The game's last viewport on its default framebuffer that extends past it
+// (see MacGlBridge::RedrawClippedGameViewport). Render thread only.
+GLVIEWPORTPROC g_macRealViewport = nullptr;
+int g_macFramebufferWidth = 0;
+int g_macFramebufferHeight = 0;
+int g_macOversizedViewport[4] = {};
+bool g_macHaveOversizedViewport = false;
+
+void WINAPI MacViewportTail(GLint x, GLint y, GLsizei width, GLsizei height) {
+    if (!g_macRealViewport) {
+        glViewport(x, y, width, height);
+        return;
+    }
+    if (!MacGlBridge::IsToolscreenContextCurrent() && g_macFramebufferWidth > 0 &&
+        (x < 0 || y < 0 || x + width > g_macFramebufferWidth || y + height > g_macFramebufferHeight)) {
+        GLint drawFramebuffer = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+        if (drawFramebuffer == 0) {
+            g_macOversizedViewport[0] = x;
+            g_macOversizedViewport[1] = y;
+            g_macOversizedViewport[2] = width;
+            g_macOversizedViewport[3] = height;
+            g_macHaveOversizedViewport = true;
+        }
+    }
+    g_macRealViewport(x, y, width, height);
+}
+
 void APIENTRY MacHkBindFramebufferExt(GLenum target, GLuint framebuffer) {
     if (!g_macOglBindFramebufferExt) return;
     BindFramebufferHook_Impl(g_macOglBindFramebufferExt, target, framebuffer);
@@ -51,10 +79,14 @@ void MacSwapBuffersDetour(void* window) {
 
     int width = 0;
     int height = 0;
+    const bool haveOversizedViewport = g_macHaveOversizedViewport;
+    g_macHaveOversizedViewport = false;
     if (!MacGlfwBridge::RealFramebufferSize(window, width, height)) {
         MacGlfwBridge::RealSwapBuffers(window);
         return;
     }
+    g_macFramebufferWidth = width;
+    g_macFramebufferHeight = height;
 
     // Same cached-texture rule as SwapBuffersHook_Impl, kept in the game
     // context's texture namespace.
@@ -63,6 +95,9 @@ void MacSwapBuffersDetour(void* window) {
     const GLuint tracked = trackedFramebuffer != UINT_MAX ? trackedFramebuffer : trackedBind;
     if (g_cachedGameTextureId.load(std::memory_order_acquire) == UINT_MAX) g_macGameTexture = UINT_MAX;
     if (tracked != UINT_MAX) g_macGameTexture = tracked;
+    if (haveOversizedViewport && g_macGameTexture != UINT_MAX) {
+        MacGlBridge::RedrawClippedGameViewport(g_macGameTexture, g_macOversizedViewport, width, height);
+    }
 
     unsigned copy = MacGlBridge::kNoTexture;
     if (!MacGlBridge::BeginToolscreenFrame(width, height, g_macGameTexture, copy)) {
@@ -89,7 +124,8 @@ void MacSwapBuffersDetour(void* window) {
 
 void MacInstallHooks() {
     // OpenGL entry points (resolved by LWJGL through the OpenGL bundle).
-    MacSymbolHooks::RegisterGlHook("glViewport", reinterpret_cast<void*>(&hkglViewport), reinterpret_cast<void**>(&oglViewport));
+    MacSymbolHooks::RegisterGlHook("glViewport", reinterpret_cast<void*>(&hkglViewport), reinterpret_cast<void**>(&g_macRealViewport));
+    oglViewport = &MacViewportTail;
     g_glViewportHookCount.fetch_add(1);
     MacSymbolHooks::RegisterGlHook("glBindTexture", reinterpret_cast<void*>(&hkglBindTexture), reinterpret_cast<void**>(&oglBindTexture));
     MacSymbolHooks::RegisterGlHook("glBindFramebuffer", reinterpret_cast<void*>(&hkglBindFramebuffer),

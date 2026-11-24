@@ -11,7 +11,9 @@
 #include "platform/macos/render/gl_bridge.h"
 #include "platform/macos/render/gl_bridge_internal.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 
 namespace {
@@ -284,6 +286,33 @@ void EndToolscreenFrame() {
     glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT, 0);
     glBlitFramebufferEXT(0, 0, g_screen.width, g_screen.height, 0, 0, g_screen.width, g_screen.height, GL_COLOR_BUFFER_BIT,
                          GL_NEAREST);
+}
+
+void RedrawClippedGameViewport(unsigned gameTexture, const int viewport[4], int framebufferWidth, int framebufferHeight) {
+    if (CGLGetCurrentContext() != g_gameContext || viewport[2] <= 0 || viewport[3] <= 0) return;
+    const int left = std::max(viewport[0], 0);
+    const int bottom = std::max(viewport[1], 0);
+    const int right = std::min(viewport[0] + viewport[2], framebufferWidth);
+    const int top = std::min(viewport[1] + viewport[3], framebufferHeight);
+    int textureWidth = 0;
+    int textureHeight = 0;
+    if (right <= left || top <= bottom || !TextureSize(gameTexture, textureWidth, textureHeight)) return;
+
+    // Texture coordinate of a framebuffer position inside the viewport.
+    const auto source = [](int offset, int viewportSize, int textureSize) {
+        return static_cast<GLint>(std::lround(static_cast<double>(offset) * textureSize / viewportSize));
+    };
+    GameStateGuard guard;
+    if (g_gameReadFramebuffer == 0) glGenFramebuffersEXT(1, &g_gameReadFramebuffer);
+    glBindFramebufferEXT(GL_READ_FRAMEBUFFER_EXT, g_gameReadFramebuffer);
+    glFramebufferTexture2DEXT(GL_READ_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, gameTexture, 0);
+    if (glCheckFramebufferStatusEXT(GL_READ_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT) {
+        glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT, 0);
+        glBlitFramebufferEXT(source(left - viewport[0], viewport[2], textureWidth), source(bottom - viewport[1], viewport[3], textureHeight),
+                             source(right - viewport[0], viewport[2], textureWidth), source(top - viewport[1], viewport[3], textureHeight),
+                             left, bottom, right, top, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+    glFramebufferTexture2DEXT(GL_READ_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, 0, 0);
 }
 
 } // namespace MacGlBridge
