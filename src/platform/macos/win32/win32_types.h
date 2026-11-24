@@ -243,9 +243,7 @@ typedef LRESULT(CALLBACK* HOOKPROC)(int code, WPARAM wParam, LPARAM lParam);
 typedef BOOL(CALLBACK* WNDENUMPROC)(HWND, LPARAM);
 typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 
-// ---------------------------------------------------------------------------
-// Macros
-// ---------------------------------------------------------------------------
+// --- Macros ---
 #define MAKEWORD(a, b) ((WORD)(((BYTE)(((DWORD_PTR)(a)) & 0xff)) | ((WORD)((BYTE)(((DWORD_PTR)(b)) & 0xff))) << 8))
 #define MAKELONG(a, b) ((LONG)(((WORD)(((DWORD_PTR)(a)) & 0xffff)) | ((DWORD)((WORD)(((DWORD_PTR)(b)) & 0xffff))) << 16))
 #define LOWORD(l) ((WORD)(((DWORD_PTR)(l)) & 0xffff))
@@ -303,9 +301,7 @@ typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 #define XBUTTON1 0x0001
 #define XBUTTON2 0x0002
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+// --- Errors ---
 #define ERROR_SUCCESS 0L
 #define NO_ERROR 0L
 #define ERROR_FILE_NOT_FOUND 2L
@@ -331,9 +327,7 @@ typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 #define WAIT_TIMEOUT 0x00000102L
 #define WAIT_FAILED 0xFFFFFFFFu
 
-// ---------------------------------------------------------------------------
-// Virtual key codes (winuser.h)
-// ---------------------------------------------------------------------------
+// --- Virtual key codes (winuser.h) ---
 #define VK_LBUTTON 0x01
 #define VK_RBUTTON 0x02
 #define VK_CANCEL 0x03
@@ -449,6 +443,7 @@ typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 #define VK_OEM_5 0xDC
 #define VK_OEM_6 0xDD
 #define VK_OEM_7 0xDE
+#define VK_OEM_NEC_EQUAL 0x92
 #define VK_OEM_8 0xDF
 #define VK_OEM_102 0xE2
 #define VK_PROCESSKEY 0xE5
@@ -465,9 +460,7 @@ typedef DWORD(WINAPI* LPTHREAD_START_ROUTINE)(LPVOID);
 #define MAPVK_VSC_TO_VK_EX 3
 #define MAPVK_VK_TO_VSC_EX 4
 
-// ---------------------------------------------------------------------------
-// Window messages (winuser.h)
-// ---------------------------------------------------------------------------
+// --- Window messages (winuser.h) ---
 #define WM_NULL 0x0000
 #define WM_CREATE 0x0001
 #define WM_DESTROY 0x0002

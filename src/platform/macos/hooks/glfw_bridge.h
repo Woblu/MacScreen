@@ -18,7 +18,7 @@ using SetSizeCallbackFun = WindowSizeFun (*)(void* window, WindowSizeFun callbac
 // event polling). Upstream's GLFW detours are registered by the dllmain glue.
 void RegisterHooks();
 
-// --- functions installed as upstream's "original" GLFW pointers ---------------
+// --- functions installed as upstream's "original" GLFW pointers ---
 void* CreateWindowThroughBridge(int width, int height, const char* title, void* monitor, void* share);
 void DestroyWindowThroughBridge(void* window);
 void SetInputModeThroughBridge(void* window, int mode, int value);
@@ -35,25 +35,21 @@ void** RealCreateWindowSlot();
 void** RealDestroyWindowSlot();
 void** RealSetInputModeSlot();
 void** RealSetCursorSlot();
-void** RealSetWindowSizeCallbackSlot();
-void** RealSetFramebufferSizeCallbackSlot();
 void** RealSwapBuffersSlot();
-void** RealWindowHintSlot();
 
-// --- frame -----------------------------------------------------------------------
-// Main thread, before Toolscreen renders: refreshes window state, cursor clip
-// and keyboard layout caches.
+// --- frame ---
+// Main thread, before Toolscreen renders: refreshes window state and the
+// cursor clip.
 void BeforeSwap(void* window);
 bool RealFramebufferSize(void* window, int& width, int& height);
 void RealSwapBuffers(void* window);
 
-// --- upstream services the bridge calls ------------------------------------------
+// --- upstream services the bridge calls ---
 void SetSensitivityResolver(void (*resolver)(float& x, float& y));
 // Upstream's SetCursorPos hook; GLFW's own cursor warps are routed through it.
 void SetCursorPosHook(BOOL (*hook)(int x, int y));
 // Real cursor warp in screen pixels (installed as upstream's oSetCursorPos).
 BOOL WarpCursorScreen(int x, int y);
-bool IsGuiOpen();
 void SetGuiOpenQuery(bool (*query)());
 
 } // namespace MacGlfwBridge

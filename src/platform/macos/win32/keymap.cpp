@@ -1,6 +1,7 @@
 #include "platform/macos/win32/keymap.h"
 
 #include "platform/macos/os/mac_os.h"
+#include "platform/macos/win32/win32_internal.h"
 #include "platform/macos/win32/win32_types.h"
 
 #include <array>
@@ -35,7 +36,6 @@ enum : int {
     K_RIGHT_SUPER = 347, K_MENU = 348, K_UNKNOWN = -1,
 };
 
-constexpr unsigned VK_OEM_NEC_EQUAL_ = 0x92;
 
 const KeyRow kRows[] = {
     { 0x00, K_A + 0, 0x1E, 'A' },  { 0x01, K_A + 18, 0x1F, 'S' }, { 0x02, K_A + 3, 0x20, 'D' },
@@ -67,7 +67,7 @@ const KeyRow kRows[] = {
     { 0x49, K_UNKNOWN, E(0x2E), VK_VOLUME_DOWN }, { 0x4A, K_UNKNOWN, E(0x20), VK_VOLUME_MUTE },
     { 0x4B, K_KP_DIVIDE, E(0x35), VK_DIVIDE }, { 0x4C, K_KP_ENTER, E(0x1C), VK_RETURN },
     { 0x4E, K_KP_SUBTRACT, 0x4A, VK_SUBTRACT }, { 0x4F, K_F1 + 17, 0x69, VK_F18 }, { 0x50, K_F1 + 18, 0x6A, VK_F19 },
-    { 0x51, K_KP_EQUAL, 0x59, VK_OEM_NEC_EQUAL_ }, { 0x52, K_KP_0 + 0, 0x52, VK_NUMPAD0 },
+    { 0x51, K_KP_EQUAL, 0x59, VK_OEM_NEC_EQUAL }, { 0x52, K_KP_0 + 0, 0x52, VK_NUMPAD0 },
     { 0x53, K_KP_0 + 1, 0x4F, VK_NUMPAD1 }, { 0x54, K_KP_0 + 2, 0x50, VK_NUMPAD2 },
     { 0x55, K_KP_0 + 3, 0x51, VK_NUMPAD3 }, { 0x56, K_KP_0 + 4, 0x4B, VK_NUMPAD4 },
     { 0x57, K_KP_0 + 5, 0x4C, VK_NUMPAD5 }, { 0x58, K_KP_0 + 6, 0x4D, VK_NUMPAD6 },
@@ -135,7 +135,8 @@ struct LayoutTable {
 std::mutex g_tableMutex;
 LayoutTable g_table;
 
-const LayoutTable& CurrentTable() {
+// Returned by value: another thread may rebuild the table after a layout change.
+LayoutTable CurrentTable() {
     const uint64_t layoutId = MacOs::KeyboardLayoutId();
     std::lock_guard<std::mutex> lock(g_tableMutex);
     if (g_table.layoutId == layoutId && layoutId != 0) return g_table;
@@ -158,33 +159,6 @@ const LayoutTable& CurrentTable() {
     }
     g_table = t;
     return g_table;
-}
-
-std::string Utf16ToUtf8(const std::u16string& s) {
-    std::string out;
-    for (size_t i = 0; i < s.size(); ++i) {
-        uint32_t cp = s[i];
-        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < s.size()) {
-            cp = 0x10000 + ((cp - 0xD800) << 10) + (s[i + 1] - 0xDC00);
-            ++i;
-        }
-        if (cp < 0x80) {
-            out.push_back(static_cast<char>(cp));
-        } else if (cp < 0x800) {
-            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else if (cp < 0x10000) {
-            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        }
-    }
-    return out;
 }
 
 uint16_t LangIdForLanguage(const std::string& language) {
@@ -286,7 +260,6 @@ unsigned GenericVk(unsigned vk) {
     }
 }
 
-bool IsExtendedKeyVk(unsigned vk) { return (ScanCodeFromVk(vk) & kExtended) != 0; }
 
 std::string KeyName(unsigned scanCode) {
     struct Name {
@@ -315,7 +288,7 @@ std::string KeyName(unsigned scanCode) {
     if (mac == kNone) return {};
     std::u16string chars = MacOs::TranslateKey(static_cast<uint16_t>(mac), false, false, false, false);
     if (chars.empty()) return {};
-    std::string name = Utf16ToUtf8(chars);
+    std::string name = MacWin32::WideToUtf8(std::wstring(chars.begin(), chars.end()));
     if (name.size() == 1) name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
     return name;
 }

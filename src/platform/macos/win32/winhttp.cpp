@@ -108,8 +108,6 @@ BOOL WinHttpSetTimeouts(HINTERNET handle, int resolveTimeout, int connectTimeout
     return FALSE;
 }
 
-BOOL WinHttpSetOption(HINTERNET, DWORD, LPVOID, DWORD) { return TRUE; }
-
 HINTERNET WinHttpConnect(HINTERNET session, LPCWSTR server, INTERNET_PORT port, DWORD) {
     Session* s = As<Session>(session, HttpType::Session);
     if (!s || !server) return nullptr;
@@ -130,13 +128,6 @@ HINTERNET WinHttpOpenRequest(HINTERNET connect, LPCWSTR verb, LPCWSTR objectName
     if (r->path.empty() || r->path[0] != '/') r->path.insert(r->path.begin(), '/');
     r->secure = (flags & WINHTTP_FLAG_SECURE) != 0;
     return r;
-}
-
-BOOL WinHttpAddRequestHeaders(HINTERNET request, LPCWSTR headers, DWORD headersLength, DWORD) {
-    Request* r = As<Request>(request, HttpType::Request);
-    if (!r || !headers) return FALSE;
-    AddHeaders(r, WideArg(headers, headersLength));
-    return TRUE;
 }
 
 BOOL WinHttpSendRequest(HINTERNET request, LPCWSTR headers, DWORD headersLength, LPVOID optional, DWORD optionalLength, DWORD, DWORD_PTR) {

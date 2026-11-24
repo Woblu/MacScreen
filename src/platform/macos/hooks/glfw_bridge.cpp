@@ -11,13 +11,12 @@
 #include "hooks/input_hook.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <mutex>
 
 namespace {
 
-// --- GLFW constants ------------------------------------------------------------------
+// --- GLFW constants ---
 constexpr int kRelease = 0;
 constexpr int kPress = 1;
 constexpr int kRepeat = 2;
@@ -53,17 +52,15 @@ using FocusFun = void (*)(void*, int);
 using EnterFun = void (*)(void*, int);
 using SizeFun = MacGlfwBridge::WindowSizeFun;
 
-// --- real GLFW entry points ----------------------------------------------------------------
+// --- real GLFW entry points ---
 struct Real {
     void* (*createWindow)(int, int, const char*, void*, void*) = nullptr;
     void (*destroyWindow)(void*) = nullptr;
-    void (*windowHint)(int, int) = nullptr;
     void (*swapBuffers)(void*) = nullptr;
     void (*pollEvents)() = nullptr;
     void (*waitEvents)() = nullptr;
     void (*waitEventsTimeout)(double) = nullptr;
     void (*setInputMode)(void*, int, int) = nullptr;
-    int (*getInputMode)(void*, int) = nullptr;
     void (*setCursor)(void*, void*) = nullptr;
     KeyFun (*setKeyCallback)(void*, KeyFun) = nullptr;
     CharFun (*setCharCallback)(void*, CharFun) = nullptr;
@@ -91,7 +88,7 @@ template <typename T> T ResolveLazy(T& slot, const char* name) {
     return slot;
 }
 
-// --- the game's GLFW callbacks ---------------------------------------------------------------
+// --- the game's GLFW callbacks ---
 struct GameCallbacks {
     KeyFun key = nullptr;
     CharFun character = nullptr;
@@ -207,9 +204,9 @@ void Deliver(UINT msg, WPARAM wParam, LPARAM lParam, LPARAM extraInfo = 0) {
     if (!MacWin32::InDispatch()) MacWin32::PumpMessages();
 }
 
-// --- keyboard -----------------------------------------------------------------------------------
+// --- keyboard ---
 
-void DeliverKey(int macKeyCode, unsigned vk, unsigned scan, int action, LPARAM extraInfo, bool injected) {
+void DeliverKey(unsigned vk, unsigned scan, int action, LPARAM extraInfo, bool injected) {
     const bool down = action != kRelease;
     const bool wasDown = MacWin32::IsKeyDown(vk);
     const bool altDown = MacWin32::IsKeyDown(VK_MENU) || (down && (vk == VK_LMENU || vk == VK_RMENU));
@@ -242,7 +239,6 @@ void DeliverKey(int macKeyCode, unsigned vk, unsigned scan, int action, LPARAM e
     if (wasDown || action == kRepeat || !down) lParam |= (1 << 30);
     if (!down) lParam |= static_cast<LPARAM>(1u << 31);
     if (down) g_state.lastKeyLParam = lParam;
-    (void)macKeyCode;
 
     Deliver(msg, MacKeymap::GenericVk(vk), lParam, extraInfo);
 }
@@ -273,11 +269,11 @@ void KeyCallback(void* window, int key, int scancode, int action, int mods) {
 
     if (key == kKeyCapsLock) {
         // Cocoa reports the lock state rather than the key; every change is a press.
-        DeliverKey(scancode, vk, scan, kPress, 0, false);
-        DeliverKey(scancode, vk, scan, kRelease, 0, false);
+        DeliverKey(vk, scan, kPress, 0, false);
+        DeliverKey(vk, scan, kRelease, 0, false);
         return;
     }
-    DeliverKey(scancode, vk, scan, action, 0, false);
+    DeliverKey(vk, scan, action, 0, false);
 }
 
 void SendChar(uint32_t codepoint, bool plain) {
@@ -298,7 +294,7 @@ void CharModsCallback(void* window, unsigned int codepoint, int mods) {
     SendChar(codepoint, (mods & kModSuper) == 0);
 }
 
-// --- mouse ------------------------------------------------------------------------------------------
+// --- mouse ---
 
 POINT RealClientPixels(double x, double y) {
     const double s = Scale();
@@ -450,7 +446,7 @@ void UpstreamFramebufferSizeTrampoline(void* window, int width, int height) {
     if (g_state.game.framebufferSize && width > 0 && height > 0) g_state.game.framebufferSize(window, width, height);
 }
 
-// --- GlfwWndProc: what GLFW's Win32 window procedure would do -----------------------------------
+// --- GlfwWndProc: what GLFW's Win32 window procedure would do ---
 
 int GlfwKeyForMessage(WPARAM wParam, LPARAM lParam, int& macKeyCode) {
     unsigned scan = static_cast<unsigned>((lParam >> 16) & 0xFF);
@@ -565,12 +561,8 @@ LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT) {
             if (g_state.cursorMode == kCursorNormal) {
-                if (g_state.gameCursor && g_real.setCursor) {
-                    g_real.setCursor(g_state.window, g_state.gameCursor);
-                    SetCursor(MacGdi::ArrowCursor());
-                } else {
-                    SetCursor(MacGdi::ArrowCursor());
-                }
+                SetCursor(MacGdi::ArrowCursor());
+                if (g_state.gameCursor && g_real.setCursor) g_real.setCursor(g_state.window, g_state.gameCursor);
             } else {
                 SetCursor(nullptr);
             }
@@ -592,7 +584,7 @@ LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     }
 }
 
-// --- injected input (SendInput) ---------------------------------------------------------------------
+// --- injected input (SendInput) ---
 
 void InjectInput(const INPUT& in) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
@@ -601,10 +593,6 @@ void InjectInput(const INPUT& in) {
         const KEYBDINPUT& k = in.ki;
         const bool up = (k.dwFlags & KEYEVENTF_KEYUP) != 0;
         const LPARAM extra = static_cast<LPARAM>(k.dwExtraInfo);
-        if (k.dwFlags & KEYEVENTF_UNICODE) {
-            if (!up) Deliver(WM_CHAR, k.wScan, 1, extra);
-            return;
-        }
         unsigned scan = 0;
         unsigned vk = k.wVk;
         if (k.dwFlags & KEYEVENTF_SCANCODE) {
@@ -618,49 +606,12 @@ void InjectInput(const INPUT& in) {
         if (vk == VK_SHIFT) vk = (scan == 0x36) ? VK_RSHIFT : VK_LSHIFT;
         if (vk == VK_CONTROL) vk = (scan & MacKeymap::kExtended) ? VK_RCONTROL : VK_LCONTROL;
         if (vk == VK_MENU) vk = (scan & MacKeymap::kExtended) ? VK_RMENU : VK_LMENU;
-        const int mac = MacKeymap::MacKeyCodeFromScanCode(scan);
         const int action = up ? kRelease : (MacWin32::IsKeyDown(vk) ? kRepeat : kPress);
-        DeliverKey(mac, vk, scan, action, extra, true);
-        return;
-    }
-    if (in.type == INPUT_MOUSE) {
-        const MOUSEINPUT& m = in.mi;
-        const LPARAM extra = static_cast<LPARAM>(m.dwExtraInfo);
-        const POINT p = CurrentClientPixels();
-        const LPARAM pos = MAKELPARAM(static_cast<WORD>(p.x), static_cast<WORD>(p.y));
-        struct ButtonFlag {
-            DWORD flag;
-            unsigned vk;
-            UINT msg;
-            bool down;
-        };
-        static const ButtonFlag kButtons[] = {
-            { MOUSEEVENTF_LEFTDOWN, VK_LBUTTON, WM_LBUTTONDOWN, true },   { MOUSEEVENTF_LEFTUP, VK_LBUTTON, WM_LBUTTONUP, false },
-            { MOUSEEVENTF_RIGHTDOWN, VK_RBUTTON, WM_RBUTTONDOWN, true },  { MOUSEEVENTF_RIGHTUP, VK_RBUTTON, WM_RBUTTONUP, false },
-            { MOUSEEVENTF_MIDDLEDOWN, VK_MBUTTON, WM_MBUTTONDOWN, true }, { MOUSEEVENTF_MIDDLEUP, VK_MBUTTON, WM_MBUTTONUP, false },
-        };
-        for (const ButtonFlag& b : kButtons) {
-            if (m.dwFlags & b.flag) {
-                MacWin32::SetKeyDown(b.vk, b.down);
-                Deliver(b.msg, MouseKeyFlags(), pos, extra);
-            }
-        }
-        if (m.dwFlags & (MOUSEEVENTF_XDOWN | MOUSEEVENTF_XUP)) {
-            const bool down = (m.dwFlags & MOUSEEVENTF_XDOWN) != 0;
-            const WORD which = (m.mouseData & XBUTTON2) ? XBUTTON2 : XBUTTON1;
-            MacWin32::SetKeyDown(which == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2, down);
-            Deliver(down ? WM_XBUTTONDOWN : WM_XBUTTONUP, MouseKeyFlags() | (static_cast<WPARAM>(which) << 16), pos, extra);
-        }
-        if (m.dwFlags & MOUSEEVENTF_WHEEL) {
-            Deliver(WM_MOUSEWHEEL, MAKEWPARAM(static_cast<WORD>(MouseKeyFlags()), static_cast<WORD>(m.mouseData)), pos, extra);
-        }
-        if (m.dwFlags & MOUSEEVENTF_HWHEEL) {
-            Deliver(WM_MOUSEHWHEEL, MAKEWPARAM(static_cast<WORD>(MouseKeyFlags()), static_cast<WORD>(m.mouseData)), pos, extra);
-        }
+        DeliverKey(vk, scan, action, extra, true);
     }
 }
 
-// --- cursor visibility ----------------------------------------------------------------------------
+// --- cursor visibility ---
 
 void OnWin32CursorVisibility(bool visible) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
@@ -723,7 +674,7 @@ int GlfwMoveCursorToPoint(uint32_t display, CGPointArg point) {
     // Display-relative point: convert to global coordinates via the display's frame.
     for (const MacOs::Display& d : MacOs::Displays()) {
         if (d.id == display) {
-            const double s = MacWin32::GetWindowSnapshot(g_state.hwnd).scale;
+            const double s = Scale();
             CGPointArg global{ d.frame.left / s + point.x, d.frame.top / s + point.y };
             return GlfwWarpCursor(global);
         }
@@ -731,7 +682,7 @@ int GlfwMoveCursorToPoint(uint32_t display, CGPointArg point) {
     return g_real.moveCursorToPoint ? g_real.moveCursorToPoint(display, point.x, point.y) : 0;
 }
 
-// --- window lifecycle -------------------------------------------------------------------------------
+// --- window lifecycle ---
 
 void RefreshSnapshot(bool includeTitle) {
     if (!g_state.nsWindow || !g_state.hwnd) return;
@@ -767,7 +718,6 @@ void OnWindowCreated(void* window) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
     ResolveLazy(g_real.getCocoaWindow, "glfwGetCocoaWindow");
     ResolveLazy(g_real.getFramebufferSize, "glfwGetFramebufferSize");
-    ResolveLazy(g_real.getInputMode, "glfwGetInputMode");
     ResolveLazy(g_real.setKeyCallback, "glfwSetKeyCallback");
     ResolveLazy(g_real.setCharCallback, "glfwSetCharCallback");
     ResolveLazy(g_real.setCharModsCallback, "glfwSetCharModsCallback");
@@ -807,7 +757,7 @@ void OnWindowCreated(void* window) {
     }
 }
 
-// --- detours for the game's GLFW calls ---------------------------------------------------------------
+// --- detours for the game's GLFW calls ---
 
 template <typename Fun> Fun SwapCallback(Fun& slot, void* window, Fun callback) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
@@ -1052,10 +1002,7 @@ void** RealCreateWindowSlot() { return reinterpret_cast<void**>(&g_real.createWi
 void** RealDestroyWindowSlot() { return reinterpret_cast<void**>(&g_real.destroyWindow); }
 void** RealSetInputModeSlot() { return reinterpret_cast<void**>(&g_real.setInputMode); }
 void** RealSetCursorSlot() { return reinterpret_cast<void**>(&g_real.setCursor); }
-void** RealSetWindowSizeCallbackSlot() { return reinterpret_cast<void**>(&g_real.setWindowSizeCallback); }
-void** RealSetFramebufferSizeCallbackSlot() { return reinterpret_cast<void**>(&g_real.setFramebufferSizeCallback); }
 void** RealSwapBuffersSlot() { return reinterpret_cast<void**>(&g_real.swapBuffers); }
-void** RealWindowHintSlot() { return reinterpret_cast<void**>(&g_real.windowHint); }
 
 void BeforeSwap(void* window) {
     std::lock_guard<std::recursive_mutex> lock(g_stateMutex);
@@ -1101,15 +1048,13 @@ void SetSensitivityResolver(void (*resolver)(float&, float&)) { g_sensitivityRes
 void SetCursorPosHook(BOOL (*hook)(int, int)) { g_cursorPosHook = hook; }
 
 BOOL WarpCursorScreen(int x, int y) {
-    const double s = MacWin32::GetWindowSnapshot(g_state.hwnd).scale;
-    const double scale = s > 0.0 ? s : 1.0;
-    if (g_real.warpCursor) g_real.warpCursor(x / scale, y / scale);
+    const double s = Scale();
+    if (g_real.warpCursor) g_real.warpCursor(x / s, y / s);
     else MacOs::WarpCursor(x, y);
     if (g_state.cursorMode != kCursorDisabled || g_state.forcedVisible) MacOs::SetCursorAssociated(true);
     return TRUE;
 }
 
-bool IsGuiOpen() { return GuiOpen(); }
 void SetGuiOpenQuery(bool (*query)()) { g_guiOpenQuery = query; }
 
 } // namespace MacGlfwBridge

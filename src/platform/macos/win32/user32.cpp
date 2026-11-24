@@ -25,7 +25,7 @@ extern "C" void* CGLGetCurrentContext(void);
 
 namespace {
 
-// --- windows ------------------------------------------------------------------------------
+// --- windows ---
 
 struct EmulatedWindow {
     HWND hwnd = nullptr;
@@ -56,7 +56,7 @@ EmulatedWindow* FindWindowLocked(HWND hwnd) {
     return nullptr;
 }
 
-// --- message context -------------------------------------------------------------------------
+// --- message context ---
 
 thread_local int t_dispatchDepth = 0;
 thread_local LPARAM t_messageExtraInfo = 0;
@@ -106,7 +106,7 @@ std::function<void(const INPUT&)> g_injector;
 std::mutex g_registeredMessagesMutex;
 std::map<std::string, UINT> g_registeredMessages;
 
-// --- keyboard state ----------------------------------------------------------------------------
+// --- keyboard state ---
 
 std::atomic<uint8_t> g_keyDown[256];
 std::atomic<uint8_t> g_keyToggled[256];
@@ -120,7 +120,7 @@ std::mutex g_hookMutex;
 std::vector<LowLevelHook> g_hooks;
 std::atomic<uintptr_t> g_nextHookId{ 1 };
 
-// --- cursor --------------------------------------------------------------------------------------
+// --- cursor ---
 
 std::mutex g_cursorMutex;
 MacWin32::CursorCallbacks g_cursorCallbacks;
@@ -133,13 +133,13 @@ RECT g_clip{};
 std::atomic<HWND> g_capture{ nullptr };
 std::atomic<bool> g_trackLeave{ false };
 
-// --- clipboard -------------------------------------------------------------------------------------
+// --- clipboard ---
 
 std::mutex g_clipboardMutex;
 std::string g_pendingClipboard;
 bool g_pendingClipboardSet = false;
 
-// --- system parameters -------------------------------------------------------------------------------
+// --- system parameters ---
 
 std::atomic<int> g_mouseSpeed{ 10 };
 FILTERKEYS g_filterKeys{ sizeof(FILTERKEYS), 0, 0, 0, 0, 0 };
@@ -200,9 +200,7 @@ std::string ToUtf8(LPCWSTR s) { return MacWin32::WideToUtf8(s ? s : L""); }
 
 } // namespace
 
-// ---------------------------------------------------------------------------------------------------
-// Internal API
-// ---------------------------------------------------------------------------------------------------
+// --- Internal API ---
 namespace MacWin32 {
 
 HWND RegisterGameWindow(void* glfwWindow, void* nsWindow, WNDPROC defaultProc) {
@@ -342,10 +340,6 @@ void SetKeyDown(unsigned vk, bool down) {
     }
 }
 
-void ReleaseAllKeys() {
-    for (auto& k : g_keyDown) k.store(0);
-}
-
 bool IsKeyDown(unsigned vk) { return vk < 256 && g_keyDown[vk].load() != 0; }
 
 bool RunLowLevelKeyboardHooks(WPARAM msg, const KBDLLHOOKSTRUCT& info) {
@@ -394,15 +388,6 @@ bool IsWin32CursorVisible() {
     return true;
 }
 
-HCURSOR CurrentCursor() { return g_currentCursor.load(); }
-
-void ReapplyCursor() {
-    HCURSOR cursor = g_currentCursor.load();
-    if (cursor && !g_cursorHiddenBySetCursor.load()) {
-        if (void* native = MacGdi::NativeCursor(cursor)) MacOs::SetCursor(native);
-    }
-}
-
 bool GetCursorClip(RECT& rect) {
     std::lock_guard<std::mutex> lock(g_cursorMutex);
     if (!g_haveClip) return false;
@@ -422,12 +407,10 @@ bool ForeignWindowId(HWND hwnd, uint32_t& windowId) {
 
 } // namespace MacWin32
 
-// ---------------------------------------------------------------------------------------------------
-// Win32 API
-// ---------------------------------------------------------------------------------------------------
+// --- Win32 API ---
 extern "C" {
 
-// --- windows ------------------------------------------------------------------------------------------
+// --- windows ---
 
 BOOL IsWindow(HWND hwnd) {
     if (!hwnd) return FALSE;
@@ -532,31 +515,10 @@ BOOL ScreenToClient(HWND hwnd, LPPOINT point) {
     return TRUE;
 }
 
-int MapWindowPoints(HWND from, HWND to, LPPOINT points, UINT count) {
-    POINT a{}, b{};
-    ClientOrigin(from, a);
-    ClientOrigin(to, b);
-    const LONG dx = a.x - b.x;
-    const LONG dy = a.y - b.y;
-    for (UINT i = 0; i < count; ++i) {
-        points[i].x += dx;
-        points[i].y += dy;
-    }
-    return MAKELONG(static_cast<WORD>(dx), static_cast<WORD>(dy));
-}
-
-BOOL AdjustWindowRectEx(LPRECT, DWORD, BOOL, DWORD) { return TRUE; }
-
 HWND GetForegroundWindow(void) {
     HWND game = MacWin32::GameWindow();
     if (game && MacWin32::GetWindowSnapshot(game).key) return game;
     return kDesktopWindow;
-}
-
-BOOL SetForegroundWindow(HWND hwnd) {
-    if (!MacWin32::IsGameWindow(hwnd)) return FALSE;
-    MacOs::WindowActivate(MacWin32::NativeWindow(hwnd));
-    return TRUE;
 }
 
 HWND GetActiveWindow(void) {
@@ -564,13 +526,7 @@ HWND GetActiveWindow(void) {
     return MacWin32::IsGameWindow(foreground) ? foreground : nullptr;
 }
 
-HWND GetFocus(void) { return GetActiveWindow(); }
-HWND SetFocus(HWND hwnd) { return hwnd; }
-
 HWND GetAncestor(HWND hwnd, UINT) { return hwnd; }
-HWND GetParent(HWND) { return nullptr; }
-HWND GetWindow(HWND, UINT) { return nullptr; }
-HWND GetDesktopWindow(void) { return kDesktopWindow; }
 
 DWORD GetWindowThreadProcessId(HWND hwnd, LPDWORD processId) {
     if (MacWin32::IsGameWindow(hwnd)) {
@@ -625,7 +581,7 @@ LONG_PTR SetWindowLongPtrW(HWND hwnd, int index, LONG_PTR value) {
             w->style = value;
             nsWindow = w->nsWindow;
             applyBorderless = true;
-            borderless = (value & WS_POPUP) != 0 && (value & WS_CAPTION) != WS_CAPTION;
+            borderless = (value & WS_CAPTION) != WS_CAPTION;
             break;
         case GWL_EXSTYLE:
             previous = w->exStyle;
@@ -638,9 +594,6 @@ LONG_PTR SetWindowLongPtrW(HWND hwnd, int index, LONG_PTR value) {
     SetLastError(ERROR_SUCCESS);
     return previous;
 }
-
-LONG GetWindowLongW(HWND hwnd, int index) { return static_cast<LONG>(GetWindowLongPtrW(hwnd, index)); }
-LONG SetWindowLongW(HWND hwnd, int index, LONG value) { return static_cast<LONG>(SetWindowLongPtrW(hwnd, index, value)); }
 
 BOOL SetWindowPos(HWND hwnd, HWND, int x, int y, int cx, int cy, UINT flags) {
     void* nsWindow = MacWin32::NativeWindow(hwnd);
@@ -664,10 +617,6 @@ BOOL SetWindowPos(HWND hwnd, HWND, int x, int y, int cx, int cy, UINT flags) {
     return TRUE;
 }
 
-BOOL MoveWindow(HWND hwnd, int x, int y, int width, int height, BOOL) {
-    return SetWindowPos(hwnd, nullptr, x, y, width, height, SWP_NOZORDER);
-}
-
 BOOL ShowWindow(HWND hwnd, int cmd) {
     void* nsWindow = MacWin32::NativeWindow(hwnd);
     if (!nsWindow) return FALSE;
@@ -686,17 +635,8 @@ BOOL ShowWindow(HWND hwnd, int cmd) {
     return wasVisible;
 }
 
-BOOL UpdateWindow(HWND) { return TRUE; }
 BOOL InvalidateRect(HWND, const RECT*, BOOL) { return TRUE; }
 BOOL RedrawWindow(HWND, const RECT*, HRGN, UINT) { return TRUE; }
-BOOL DestroyWindow(HWND) { return FALSE; }
-ATOM RegisterClassExW(const WNDCLASSEXW*) { return 0; }
-BOOL UnregisterClassW(LPCWSTR, HINSTANCE) { return TRUE; }
-
-HWND CreateWindowExW(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID) {
-    SetLastError(ERROR_ACCESS_DENIED);
-    return nullptr;
-}
 
 LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM) { return 0; }
 
@@ -713,27 +653,6 @@ HANDLE GetPropW(HWND hwnd, LPCWSTR name) {
     if (std::wstring(name) == L"GLFW") return w->hwnd;
     auto it = w->props.find(name);
     return it == w->props.end() ? nullptr : it->second;
-}
-
-BOOL SetPropW(HWND hwnd, LPCWSTR name, HANDLE data) {
-    if (!name) return FALSE;
-    std::lock_guard<std::mutex> lock(g_windowMutex);
-    EmulatedWindow* w = FindWindowLocked(hwnd);
-    if (!w) return FALSE;
-    w->props[name] = data;
-    return TRUE;
-}
-
-HANDLE RemovePropW(HWND hwnd, LPCWSTR name) {
-    if (!name) return nullptr;
-    std::lock_guard<std::mutex> lock(g_windowMutex);
-    EmulatedWindow* w = FindWindowLocked(hwnd);
-    if (!w) return nullptr;
-    auto it = w->props.find(name);
-    if (it == w->props.end()) return nullptr;
-    HANDLE value = it->second;
-    w->props.erase(it);
-    return value;
 }
 
 BOOL EnumWindows(WNDENUMPROC proc, LPARAM lParam) {
@@ -765,18 +684,6 @@ int GetWindowTextA(HWND hwnd, LPSTR text, int maxCount) {
     return n;
 }
 
-int GetWindowTextW(HWND hwnd, LPWSTR text, int maxCount) {
-    if (!text || maxCount <= 0) return 0;
-    const std::wstring title = MacWin32::Utf8ToWide(WindowTitleUtf8(hwnd));
-    const int n = std::min<int>(static_cast<int>(title.size()), maxCount - 1);
-    std::wmemcpy(text, title.data(), static_cast<size_t>(n));
-    text[n] = L'\0';
-    return n;
-}
-
-int GetWindowTextLengthW(HWND hwnd) { return static_cast<int>(MacWin32::Utf8ToWide(WindowTitleUtf8(hwnd)).size()); }
-BOOL SetWindowTextW(HWND, LPCWSTR) { return TRUE; }
-
 static std::string ClassNameUtf8(HWND hwnd) {
     if (MacWin32::IsGameWindow(hwnd)) return "GLFW30";
     MacOs::ForeignWindow info;
@@ -800,13 +707,6 @@ int GetClassNameW(HWND hwnd, LPWSTR className, int maxCount) {
     std::wmemcpy(className, name.data(), static_cast<size_t>(n));
     className[n] = L'\0';
     return n;
-}
-
-HWND WindowFromPoint(POINT point) {
-    HWND game = MacWin32::GameWindow();
-    if (!game) return nullptr;
-    const RECT r = MacWin32::GetWindowSnapshot(game).clientScreen;
-    return (point.x >= r.left && point.x < r.right && point.y >= r.top && point.y < r.bottom) ? game : kDesktopWindow;
 }
 
 HMONITOR MonitorFromRect(LPCRECT rect, DWORD) {
@@ -838,25 +738,6 @@ BOOL GetMonitorInfoW(HMONITOR monitor, LPMONITORINFO info) {
         const std::wstring name = L"\\\\.\\DISPLAY" + std::to_wstring(index + 1);
         wcsncpy(ex->szDevice, name.c_str(), CCHDEVICENAME - 1);
         ex->szDevice[CCHDEVICENAME - 1] = L'\0';
-    }
-    return TRUE;
-}
-
-BOOL GetMonitorInfoA(HMONITOR monitor, LPMONITORINFO info) {
-    if (!info) return FALSE;
-    const DWORD size = info->cbSize;
-    info->cbSize = sizeof(MONITORINFO);
-    const BOOL ok = GetMonitorInfoW(monitor, info);
-    info->cbSize = size;
-    return ok;
-}
-
-BOOL EnumDisplayMonitors(HDC, LPCRECT, MONITORENUMPROC proc, LPARAM data) {
-    if (!proc) return FALSE;
-    const auto displays = CachedDisplays();
-    for (size_t i = 0; i < displays.size(); ++i) {
-        RECT r = ToRect(displays[i].frame);
-        if (!proc(MonitorHandle(i), nullptr, &r, data)) break;
     }
     return TRUE;
 }
@@ -902,12 +783,6 @@ int GetSystemMetricsForDpi(int index, UINT dpi) {
     return GetSystemMetrics(index);
 }
 
-UINT GetDpiForWindow(HWND hwnd) {
-    const double scale = MacWin32::IsGameWindow(hwnd) ? MacWin32::GetWindowSnapshot(hwnd).scale : MacOs::PrimaryDisplayScale();
-    return static_cast<UINT>(std::lround(USER_DEFAULT_SCREEN_DPI * scale));
-}
-
-UINT GetDpiForSystem(void) { return static_cast<UINT>(std::lround(USER_DEFAULT_SCREEN_DPI * MacOs::PrimaryDisplayScale())); }
 BOOL SetProcessDPIAware(void) { return TRUE; }
 
 BOOL SystemParametersInfoW(UINT action, UINT, PVOID data, UINT) {
@@ -947,30 +822,7 @@ BOOL SystemParametersInfoW(UINT action, UINT, PVOID data, UINT) {
     }
 }
 
-BOOL SystemParametersInfoA(UINT action, UINT param, PVOID data, UINT winIni) { return SystemParametersInfoW(action, param, data, winIni); }
-
-int MessageBoxW(HWND, LPCWSTR text, LPCWSTR caption, UINT type) {
-    std::vector<std::string> buttons;
-    const UINT kind = type & 0xF;
-    if (kind == MB_OKCANCEL) buttons = { "OK", "Cancel" };
-    else if (kind == MB_YESNO) buttons = { "Yes", "No" };
-    else buttons = { "OK" };
-    const bool critical = (type & 0xF0) == MB_ICONERROR || (type & 0xF0) == MB_ICONWARNING;
-    const int pressed = MacOs::ShowAlert(ToUtf8(caption), ToUtf8(text), buttons, critical);
-    if (kind == MB_OKCANCEL) return pressed == 0 ? IDOK : IDCANCEL;
-    if (kind == MB_YESNO) return pressed == 0 ? IDYES : IDNO;
-    return IDOK;
-}
-
-int MessageBoxA(HWND hwnd, LPCSTR text, LPCSTR caption, UINT type) {
-    const std::wstring t = MacWin32::Utf8ToWide(text ? text : "");
-    const std::wstring c = MacWin32::Utf8ToWide(caption ? caption : "");
-    return MessageBoxW(hwnd, t.c_str(), c.c_str(), type);
-}
-
-BOOL FlashWindow(HWND, BOOL) { return TRUE; }
-
-// --- messages ------------------------------------------------------------------------------------------
+// --- messages ---
 
 BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (!hwnd) return PostThreadMessageW(GetCurrentThreadId(), msg, wParam, lParam);
@@ -1001,8 +853,6 @@ LRESULT SendMessageTimeoutW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, U
     if (result) *result = static_cast<DWORD_PTR>(r);
     return 1;
 }
-
-BOOL SendNotifyMessageW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) { return PostMessageW(hwnd, msg, wParam, lParam); }
 
 BOOL PostThreadMessageW(DWORD threadId, UINT msg, WPARAM wParam, LPARAM lParam) {
     auto q = QueueFor(threadId, false);
@@ -1056,14 +906,10 @@ BOOL PeekMessageW(LPMSG msg, HWND, UINT filterMin, UINT filterMax, UINT removeMs
     return FALSE;
 }
 
-BOOL TranslateMessage(const MSG*) { return FALSE; }
-
 LRESULT DispatchMessageW(const MSG* msg) {
     if (!msg || !msg->hwnd) return 0;
     return MacWin32::DispatchToWindow(msg->hwnd, msg->message, msg->wParam, msg->lParam);
 }
-
-void PostQuitMessage(int exitCode) { PostThreadMessageW(GetCurrentThreadId(), WM_QUIT, static_cast<WPARAM>(exitCode), 0); }
 
 UINT RegisterWindowMessageA(LPCSTR name) {
     if (!name) return 0;
@@ -1074,8 +920,6 @@ UINT RegisterWindowMessageA(LPCSTR name) {
     g_registeredMessages[name] = id;
     return id;
 }
-
-UINT RegisterWindowMessageW(LPCWSTR name) { return RegisterWindowMessageA(ToUtf8(name).c_str()); }
 
 UINT_PTR SetTimer(HWND hwnd, UINT_PTR id, UINT elapse, void*) {
     if (!MacWin32::IsGameWindow(hwnd)) return 0;
@@ -1101,9 +945,8 @@ BOOL KillTimer(HWND hwnd, UINT_PTR id) {
 
 LPARAM GetMessageExtraInfo(void) { return t_messageExtraInfo; }
 LONG GetMessageTime(void) { return t_dispatchDepth > 0 ? t_messageTime : static_cast<LONG>(GetTickCount()); }
-DWORD GetQueueStatus(UINT) { return 0; }
 
-// --- keyboard / mouse ------------------------------------------------------------------------------------
+// --- keyboard / mouse ---
 
 SHORT GetAsyncKeyState(int vk) {
     if (vk <= 0 || vk > 255) return 0;
@@ -1131,8 +974,6 @@ BOOL GetKeyboardState(PBYTE keyState) {
     }
     return TRUE;
 }
-
-BOOL SetKeyboardState(PBYTE) { return TRUE; }
 
 UINT MapVirtualKeyExW(UINT code, UINT mapType, HKL) {
     switch (mapType) {
@@ -1192,10 +1033,6 @@ int ToUnicodeEx(UINT vk, UINT scanCode, const BYTE* keyState, LPWSTR buffer, int
     return written;
 }
 
-int ToUnicode(UINT vk, UINT scanCode, const BYTE* keyState, LPWSTR buffer, int bufferSize, UINT flags) {
-    return ToUnicodeEx(vk, scanCode, keyState, buffer, bufferSize, flags, nullptr);
-}
-
 SHORT VkKeyScanExW(WCHAR ch, HKL) {
     for (int shift = 0; shift < 2; ++shift) {
         for (int option = 0; option < 2; ++option) {
@@ -1214,7 +1051,6 @@ SHORT VkKeyScanExW(WCHAR ch, HKL) {
     return -1;
 }
 
-SHORT VkKeyScanW(WCHAR ch) { return VkKeyScanExW(ch, nullptr); }
 SHORT VkKeyScanA(CHAR ch) { return VkKeyScanExW(static_cast<WCHAR>(static_cast<unsigned char>(ch)), nullptr); }
 
 int GetKeyNameTextA(LONG lParam, LPSTR buffer, int size) {
@@ -1228,17 +1064,6 @@ int GetKeyNameTextA(LONG lParam, LPSTR buffer, int size) {
     return n;
 }
 
-int GetKeyNameTextW(LONG lParam, LPWSTR buffer, int size) {
-    char narrow[128];
-    GetKeyNameTextA(lParam, narrow, sizeof(narrow));
-    const std::wstring wide = MacWin32::Utf8ToWide(narrow);
-    if (!buffer || size <= 0) return 0;
-    const int n = std::min<int>(static_cast<int>(wide.size()), size - 1);
-    std::wmemcpy(buffer, wide.data(), static_cast<size_t>(n));
-    buffer[n] = L'\0';
-    return n;
-}
-
 HKL GetKeyboardLayout(DWORD) { return reinterpret_cast<HKL>(MacKeymap::KeyboardLayoutHandle()); }
 
 UINT SendInput(UINT count, LPINPUT inputs, int) {
@@ -1246,16 +1071,6 @@ UINT SendInput(UINT count, LPINPUT inputs, int) {
     std::lock_guard<std::mutex> lock(g_injectMutex);
     for (UINT i = 0; i < count; ++i) g_injected.push_back(inputs[i]);
     return count;
-}
-
-void keybd_event(BYTE vk, BYTE scan, DWORD flags, ULONG_PTR extraInfo) {
-    INPUT in{};
-    in.type = INPUT_KEYBOARD;
-    in.ki.wVk = vk;
-    in.ki.wScan = scan;
-    in.ki.dwFlags = flags;
-    in.ki.dwExtraInfo = extraInfo;
-    SendInput(1, &in, sizeof(INPUT));
 }
 
 HHOOK SetWindowsHookExW(int idHook, HOOKPROC proc, HINSTANCE, DWORD) {
@@ -1287,8 +1102,6 @@ BOOL GetCursorPos(LPPOINT point) {
     return TRUE;
 }
 
-BOOL GetPhysicalCursorPos(LPPOINT point) { return GetCursorPos(point); }
-
 BOOL SetCursorPos(int x, int y) {
     std::function<void(int, int)> warp;
     {
@@ -1304,20 +1117,6 @@ BOOL ClipCursor(const RECT* rect) {
     std::lock_guard<std::mutex> lock(g_cursorMutex);
     g_haveClip = rect != nullptr;
     if (rect) g_clip = *rect;
-    return TRUE;
-}
-
-BOOL GetClipCursor(LPRECT rect) {
-    if (!rect) return FALSE;
-    std::lock_guard<std::mutex> lock(g_cursorMutex);
-    if (g_haveClip) {
-        *rect = g_clip;
-        return TRUE;
-    }
-    rect->left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    rect->top = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    rect->right = rect->left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    rect->bottom = rect->top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
     return TRUE;
 }
 
@@ -1367,12 +1166,9 @@ BOOL TrackMouseEvent(LPTRACKMOUSEEVENT eventTrack) {
     return TRUE;
 }
 
-UINT GetDoubleClickTime(void) { return 500; }
-UINT GetCaretBlinkTime(void) { return 530; }
-BOOL SwapMouseButton(BOOL) { return FALSE; }
 UINT GetRawInputData(HRAWINPUT, UINT, LPVOID, PUINT, UINT) { return static_cast<UINT>(-1); }
 
-// --- clipboard ---------------------------------------------------------------------------------------------
+// --- clipboard ---
 
 BOOL OpenClipboard(HWND) { return TRUE; }
 
@@ -1410,35 +1206,39 @@ HANDLE SetClipboardData(UINT format, HANDLE mem) {
     } else {
         return nullptr;
     }
-    std::lock_guard<std::mutex> lock(g_clipboardMutex);
-    g_pendingClipboard = text;
-    g_pendingClipboardSet = true;
+    {
+        std::lock_guard<std::mutex> lock(g_clipboardMutex);
+        g_pendingClipboard = text;
+        g_pendingClipboardSet = true;
+    }
+    // The clipboard owns the data from here on, as on Windows.
+    GlobalFree(mem);
     return mem;
 }
 
+// The returned data belongs to the clipboard, as on Windows; it is replaced on the next call.
 HANDLE GetClipboardData(UINT format) {
+    static HGLOBAL s_data = nullptr;
     std::string text;
     if (!MacOs::GetClipboardText(text)) return nullptr;
+    HGLOBAL mem = nullptr;
     if (format == CF_UNICODETEXT) {
         const std::wstring w = MacWin32::Utf8ToWide(text);
-        HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, (w.size() + 1) * sizeof(wchar_t));
+        mem = GlobalAlloc(GMEM_MOVEABLE, (w.size() + 1) * sizeof(wchar_t));
         std::wmemcpy(static_cast<wchar_t*>(GlobalLock(mem)), w.c_str(), w.size() + 1);
-        return mem;
-    }
-    if (format == CF_TEXT) {
-        HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    } else if (format == CF_TEXT) {
+        mem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
         std::memcpy(GlobalLock(mem), text.c_str(), text.size() + 1);
-        return mem;
+    } else {
+        return nullptr;
     }
-    return nullptr;
+    std::lock_guard<std::mutex> lock(g_clipboardMutex);
+    if (s_data) GlobalFree(s_data);
+    s_data = mem;
+    return mem;
 }
 
-BOOL IsClipboardFormatAvailable(UINT format) {
-    std::string text;
-    return (format == CF_TEXT || format == CF_UNICODETEXT) && MacOs::GetClipboardText(text);
-}
-
-// --- common dialogs ----------------------------------------------------------------------------------------
+// --- common dialogs ---
 
 static std::vector<std::string> ParseFilterExtensions(LPCWSTR filter, DWORD index) {
     std::vector<std::string> extensions;
@@ -1496,10 +1296,9 @@ static BOOL RunFileDialog(LPOPENFILENAMEW ofn, bool save) {
 }
 
 BOOL GetOpenFileNameW(LPOPENFILENAMEW ofn) { return RunFileDialog(ofn, false); }
-BOOL GetSaveFileNameW(LPOPENFILENAMEW ofn) { return RunFileDialog(ofn, true); }
 DWORD CommDlgExtendedError(void) { return 0; }
 
-// --- dwm -------------------------------------------------------------------------------------------------
+// --- dwm ---
 
 HRESULT DwmGetWindowAttribute(HWND hwnd, DWORD attribute, PVOID value, DWORD size) {
     if (!value) return E_INVALIDARG;
@@ -1522,7 +1321,7 @@ HRESULT DwmIsCompositionEnabled(BOOL* enabled) {
 
 HRESULT DwmGetColorizationColor(DWORD*, BOOL*) { return E_FAIL; }
 
-// --- wgl ---------------------------------------------------------------------------------------------------
+// --- wgl ---
 
 // Upstream renders only in Toolscreen's context (see render/gl_bridge.h). The
 // game's context reads as "no context", so code that runs outside the frame
@@ -1533,13 +1332,7 @@ HGLRC wglGetCurrentContext(void) {
     return current && current == MacGlBridge::ToolscreenContext() ? static_cast<HGLRC>(current) : nullptr;
 }
 
-HDC wglGetCurrentDC(void) {
-    HWND game = MacWin32::GameWindow();
-    return game ? GetDC(game) : nullptr;
-}
-
 FARPROC wglGetProcAddress(LPCSTR) { return nullptr; }
-BOOL wglMakeCurrent(HDC, HGLRC) { return FALSE; }
 BOOL SwapBuffers(HDC) { return FALSE; }
 
 } // extern "C"

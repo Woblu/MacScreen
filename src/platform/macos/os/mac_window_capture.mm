@@ -6,6 +6,7 @@
 #include "platform/macos/os/mac_window_capture.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <map>
@@ -44,7 +45,7 @@ struct Session {
     dispatch_queue_t queue = nullptr;
     std::mutex frameMutex;
     Frame frame;
-    bool haveFrame = false;
+    std::atomic<bool> haveFrame{ false };
     bool starting = false;
     bool running = false;
     uint64_t lastRequestMs = 0;

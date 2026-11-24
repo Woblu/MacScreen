@@ -24,7 +24,8 @@ GLuint g_macGameTexture = UINT_MAX;
 GLBINDFRAMEBUFFERPROC g_macOglBindFramebufferExt = nullptr;
 
 // The game's last viewport on its default framebuffer that extends past it
-// (see MacGlBridge::RedrawClippedGameViewport). Render thread only.
+// (see MacGlBridge::RedrawClippedGameViewport). Only recorded in the game's
+// context, so only on the thread that swaps.
 GLVIEWPORTPROC g_macRealViewport = nullptr;
 int g_macFramebufferWidth = 0;
 int g_macFramebufferHeight = 0;
@@ -36,7 +37,7 @@ void WINAPI MacViewportTail(GLint x, GLint y, GLsizei width, GLsizei height) {
         glViewport(x, y, width, height);
         return;
     }
-    if (!MacGlBridge::IsToolscreenContextCurrent() && g_macFramebufferWidth > 0 &&
+    if (MacGlBridge::IsGameContextCurrent() && g_macFramebufferWidth > 0 &&
         (x < 0 || y < 0 || x + width > g_macFramebufferWidth || y + height > g_macFramebufferHeight)) {
         GLint drawFramebuffer = 0;
         glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
@@ -169,9 +170,7 @@ void MacInstallHooks() {
     LogCategory("init", "macOS hooks registered; they attach when LWJGL loads.");
 }
 
-// ---------------------------------------------------------------------------------------------
-// Library entry points
-// ---------------------------------------------------------------------------------------------
+// --- Library entry points ---
 
 namespace MacWin32 {
 HMODULE ToolscreenModule() {

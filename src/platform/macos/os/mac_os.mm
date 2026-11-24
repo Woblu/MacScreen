@@ -13,9 +13,7 @@
 #include <crt_externs.h>
 #include <libproc.h>
 #include <mutex>
-#include <pthread.h>
 #include <signal.h>
-#include <sys/sysctl.h>
 
 namespace {
 
@@ -96,7 +94,6 @@ struct LayoutCache {
     CFDataRef layoutData = nullptr;
     uint64_t id = 0;
     std::string language;
-    std::string name;
     UInt32 keyboardType = 0;
     bool loaded = false;
 };
@@ -115,13 +112,11 @@ void LoadLayoutOnMainThread() {
         data = static_cast<CFDataRef>(TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData));
     }
     NSString* sourceId = (__bridge NSString*)TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
-    NSString* localizedName = (__bridge NSString*)TISGetInputSourceProperty(source, kTISPropertyLocalizedName);
     NSArray* languages = (__bridge NSArray*)TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages);
 
     std::lock_guard<std::mutex> lock(g_layout.mutex);
     if (g_layout.layoutData) CFRelease(g_layout.layoutData);
     g_layout.layoutData = data ? static_cast<CFDataRef>(CFRetain(data)) : nullptr;
-    g_layout.name = ToStdString(localizedName);
     g_layout.language = (languages.count > 0) ? ToStdString(languages[0]) : std::string("en");
     g_layout.keyboardType = LMGetKbdType();
     const std::string idString = ToStdString(sourceId);
@@ -164,6 +159,53 @@ NSWindow* AsWindow(void* p) { return (__bridge NSWindow*)p; }
 
 } // namespace
 
+// Collects one response for HttpRequest. Upstream stops reading at its own size
+// limits (16 MB at most); larger bodies are cancelled here instead of being
+// buffered whole first.
+constexpr NSUInteger kMaxHttpBody = 32u * 1024u * 1024u;
+
+@interface TsHttpTask : NSObject <NSURLSessionDataDelegate> {
+@public
+    dispatch_semaphore_t done;
+    NSMutableData* data;
+    NSHTTPURLResponse* response;
+    NSError* error;
+    bool tooLarge;
+}
+@end
+
+@implementation TsHttpTask
+- (instancetype)init {
+    if ((self = [super init])) {
+        done = dispatch_semaphore_create(0);
+        data = [NSMutableData data];
+    }
+    return self;
+}
+
+- (void)URLSession:(NSURLSession*)session
+              dataTask:(NSURLSessionDataTask*)task
+    didReceiveResponse:(NSURLResponse*)r
+     completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+    response = [r isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)r : nil;
+    tooLarge = r.expectedContentLength > static_cast<long long>(kMaxHttpBody);
+    completionHandler(tooLarge ? NSURLSessionResponseCancel : NSURLSessionResponseAllow);
+}
+
+- (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task didReceiveData:(NSData*)chunk {
+    [data appendData:chunk];
+    if (data.length > kMaxHttpBody) {
+        tooLarge = true;
+        [task cancel];
+    }
+}
+
+- (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task didCompleteWithError:(NSError*)e {
+    error = e;
+    dispatch_semaphore_signal(done);
+}
+@end
+
 namespace MacOs {
 
 void SetCoordinateScale(double scale) { g_coordinateScale.store(scale, std::memory_order_relaxed); }
@@ -189,14 +231,12 @@ void RunOnMainThreadSync(const std::function<void()>& fn) {
 }
 
 void RunOnMainThreadAsync(std::function<void()> fn) {
-    auto* heap = new std::function<void()>(std::move(fn));
     dispatch_async(dispatch_get_main_queue(), ^{
-      (*heap)();
-      delete heap;
+      fn();
     });
 }
 
-// --- displays ---------------------------------------------------------------------
+// --- displays ---
 
 double PrimaryDisplayScale() {
     CGDirectDisplayID display = CGMainDisplayID();
@@ -247,7 +287,7 @@ std::vector<Display> Displays() {
     return result;
 }
 
-// --- windows ------------------------------------------------------------------------
+// --- windows ---
 
 bool WindowContentRect(void* nsWindow, PixelRect& out) {
     if (!nsWindow) return false;
@@ -306,15 +346,12 @@ bool WindowIsFullscreen(void* nsWindow) {
     });
 }
 
-bool ApplicationIsActive() {
-    return OnMain([&]() -> bool { return NSApp.isActive; });
-}
-
 void WindowActivate(void* nsWindow) {
     if (!nsWindow) return;
-    RunOnMainThreadAsync([nsWindow] {
+    NSWindow* window = AsWindow(nsWindow);
+    RunOnMainThreadAsync([window] {
         [NSApp activateIgnoringOtherApps:YES];
-        [AsWindow(nsWindow) makeKeyAndOrderFront:nil];
+        [window makeKeyAndOrderFront:nil];
     });
 }
 
@@ -345,10 +382,8 @@ void WindowSetBorderless(void* nsWindow, bool borderless) {
             NSScreen* screen = window.screen ?: [NSScreen mainScreen];
             window.styleMask = NSWindowStyleMaskBorderless;
             [window setFrame:screen.frame display:YES];
-            window.level = NSMainMenuWindowLevel + 1;
             [NSApp setPresentationOptions:NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar];
         } else {
-            window.level = NSNormalWindowLevel;
             [NSApp setPresentationOptions:NSApplicationPresentationDefault];
             window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable |
                                NSWindowStyleMaskResizable;
@@ -363,18 +398,19 @@ bool WindowIsBorderless(void* nsWindow) {
 
 void WindowMiniaturize(void* nsWindow) {
     if (!nsWindow) return;
-    RunOnMainThreadAsync([nsWindow] { [AsWindow(nsWindow) miniaturize:nil]; });
+    NSWindow* window = AsWindow(nsWindow);
+    RunOnMainThreadAsync([window] { [window miniaturize:nil]; });
 }
 
 void WindowRestore(void* nsWindow) {
     if (!nsWindow) return;
-    RunOnMainThreadAsync([nsWindow] {
-        NSWindow* window = AsWindow(nsWindow);
+    NSWindow* window = AsWindow(nsWindow);
+    RunOnMainThreadAsync([window] {
         if (window.isMiniaturized) [window deminiaturize:nil];
     });
 }
 
-// --- other windows -----------------------------------------------------------------------
+// --- other windows ---
 
 static bool FillForeignWindow(NSDictionary* info, ForeignWindow& w) {
     NSNumber* number = info[(id)kCGWindowNumber];
@@ -424,7 +460,7 @@ bool WindowInfo(uint32_t windowId, ForeignWindow& out) {
     }
 }
 
-// --- cursor ------------------------------------------------------------------------------
+// --- cursor ---
 
 bool CursorPosition(int& x, int& y) {
     CGEventRef event = CGEventCreate(nullptr);
@@ -553,7 +589,7 @@ bool CursorImage(void* cursor, std::vector<uint8_t>& rgba, int& width, int& heig
 
 int SystemCursorSizePixels() { return static_cast<int>(std::lround(32.0 * CoordinateScale())); }
 
-// --- keyboard -------------------------------------------------------------------------------
+// --- keyboard ---
 
 std::u16string TranslateKey(uint16_t keyCode, bool shift, bool option, bool capsLock, bool control) {
     EnsureLayout();
@@ -569,7 +605,7 @@ std::u16string TranslateKey(uint16_t keyCode, bool shift, bool option, bool caps
     UniChar chars[8];
     UniCharCount length = 0;
     const OSStatus status = UCKeyTranslate(layout, keyCode, kUCKeyActionDown, (modifiers >> 8) & 0xFF, g_layout.keyboardType,
-                                           kUCKeyTranslateNoDeadKeysBit, &deadKeyState, 8, &length, chars);
+                                           kUCKeyTranslateNoDeadKeysMask, &deadKeyState, 8, &length, chars);
     if (status != noErr || length == 0) return {};
     return std::u16string(reinterpret_cast<const char16_t*>(chars), length);
 }
@@ -584,12 +620,6 @@ std::string KeyboardLayoutLanguage() {
     EnsureLayout();
     std::lock_guard<std::mutex> lock(g_layout.mutex);
     return g_layout.language.empty() ? std::string("en") : g_layout.language;
-}
-
-std::string KeyboardLayoutName() {
-    EnsureLayout();
-    std::lock_guard<std::mutex> lock(g_layout.mutex);
-    return g_layout.name;
 }
 
 int PhysicalKeyboardType() {
@@ -612,7 +642,7 @@ int KeyRepeatInitialDelayMs() { return static_cast<int>(std::lround([NSEvent key
 
 int KeyRepeatIntervalMs() { return static_cast<int>(std::lround([NSEvent keyRepeatInterval] * 1000.0)); }
 
-// --- clipboard / shell / dialogs ------------------------------------------------------------
+// --- clipboard / shell / dialogs ---
 
 bool SetClipboardText(const std::string& utf8) {
     return OnMain([&]() -> bool {
@@ -698,7 +728,7 @@ int ShowAlert(const std::string& title, const std::string& text, const std::vect
     });
 }
 
-// --- paths ------------------------------------------------------------------------------------
+// --- paths ---
 
 static std::string SearchPath(NSSearchPathDirectory dir) {
     NSArray* paths = NSSearchPathForDirectoriesInDomains(dir, NSUserDomainMask, YES);
@@ -724,7 +754,7 @@ std::vector<std::string> FontDirectories() {
     return { "/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts", HomeDirectory() + "/Library/Fonts" };
 }
 
-// --- processes --------------------------------------------------------------------------------
+// --- processes ---
 
 bool ProcessStartTimeUs(int pid, uint64_t& outUs) {
     struct proc_bsdinfo info {};
@@ -751,7 +781,7 @@ std::vector<std::string> CommandLineArguments() {
     return args;
 }
 
-// --- HTTP -----------------------------------------------------------------------------------
+// --- HTTP ---
 
 bool HttpRequest(const std::string& method, const std::string& url, const std::vector<std::pair<std::string, std::string>>& headers,
                  const std::vector<uint8_t>& body, int timeoutMs, HttpResponse& out) {
@@ -767,33 +797,28 @@ bool HttpRequest(const std::string& method, const std::string& url, const std::v
         for (const auto& h : headers) [request setValue:ToNSString(h.second) forHTTPHeaderField:ToNSString(h.first)];
         if (!body.empty()) request.HTTPBody = [NSData dataWithBytes:body.data() length:body.size()];
 
-        dispatch_semaphore_t done = dispatch_semaphore_create(0);
-        __block NSData* data = nil;
-        __block NSHTTPURLResponse* response = nil;
-        __block NSError* error = nil;
-        NSURLSessionDataTask* task =
-            [[NSURLSession sharedSession] dataTaskWithRequest:request
-                                            completionHandler:^(NSData* d, NSURLResponse* r, NSError* e) {
-                                              data = d;
-                                              response = [r isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)r : nil;
-                                              error = e;
-                                              dispatch_semaphore_signal(done);
-                                            }];
-        [task resume];
-        dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
+        TsHttpTask* state = [[TsHttpTask alloc] init];
+        NSURLSession* session = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.defaultSessionConfiguration
+                                                              delegate:state
+                                                         delegateQueue:nil];
+        [[session dataTaskWithRequest:request] resume];
+        dispatch_semaphore_wait(state->done, DISPATCH_TIME_FOREVER);
+        [session finishTasksAndInvalidate];
 
-        if (error || !response) {
-            out.error = error ? ToStdString(error.localizedDescription) : std::string("no response");
+        if (state->tooLarge) {
+            out.error = "response too large";
             return false;
         }
-        out.status = static_cast<int>(response.statusCode);
-        [response.allHeaderFields enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL*) {
+        if (state->error || !state->response) {
+            out.error = state->error ? ToStdString(state->error.localizedDescription) : std::string("no response");
+            return false;
+        }
+        out.status = static_cast<int>(state->response.statusCode);
+        [state->response.allHeaderFields enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL*) {
           out.headers.emplace_back(ToStdString([key description]), ToStdString([value description]));
         }];
-        if (data.length > 0) {
-            const auto* bytes = static_cast<const uint8_t*>(data.bytes);
-            out.body.assign(bytes, bytes + data.length);
-        }
+        const auto* bytes = static_cast<const uint8_t*>(state->data.bytes);
+        out.body.assign(bytes, bytes + state->data.length);
         return true;
     }
 }

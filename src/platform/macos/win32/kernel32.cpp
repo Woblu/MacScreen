@@ -24,7 +24,6 @@
 #include <mutex>
 #include <pthread.h>
 #include <sched.h>
-#include <signal.h>
 #include <string>
 #include <strings.h>
 #include <sys/mman.h>
@@ -42,7 +41,7 @@ constexpr uint64_t kUnixEpochAsFileTime = 116444736000000000ull;
 
 uint64_t NowSteadyNs() { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW); }
 
-// --- kernel objects ------------------------------------------------------------
+// --- kernel objects ---
 
 enum class ObjType : uint32_t { File = 1, Event, Timer, Thread, Process, Global, Mapping };
 
@@ -262,7 +261,7 @@ bool GetEnv(const std::string& name, std::string& out) {
     return SpecialEnvironment(name, out);
 }
 
-// --- images ---------------------------------------------------------------------
+// --- images ---
 
 std::string ImagePathForHeader(const void* header) {
     const uint32_t count = _dyld_image_count();
@@ -305,8 +304,6 @@ std::string KnownFolder(uint32_t data1) {
 
 void* ThreadEntry(void* arg) {
     ThreadObj* t = static_cast<ThreadObj*>(arg);
-    uint64_t tid = 0;
-    pthread_threadid_np(nullptr, &tid);
     t->start(t->param);
     {
         std::lock_guard<std::mutex> lock(t->mutex);
@@ -339,7 +336,8 @@ bool WaitOn(Waitable* w, DWORD milliseconds) {
                 if (now >= target) break;
                 const uint64_t remaining = target - now;
                 if (remaining > 1500000ull) {
-                    struct timespec ts { 0, static_cast<long>(remaining - 1000000ull) };
+                    const uint64_t sleepNs = remaining - 1000000ull;
+                    struct timespec ts { static_cast<time_t>(sleepNs / 1000000000ull), static_cast<long>(sleepNs % 1000000000ull) };
                     nanosleep(&ts, nullptr);
                 } else if (remaining > 200000ull) {
                     struct timespec ts { 0, 100000 };
@@ -368,9 +366,7 @@ bool WaitOn(Waitable* w, DWORD milliseconds) {
 
 } // namespace
 
-// ---------------------------------------------------------------------------------------------
-// Helpers shared with the other Win32 files
-// ---------------------------------------------------------------------------------------------
+// --- Helpers shared with the other Win32 files ---
 namespace MacWin32 {
 
 std::string WideToUtf8(const std::wstring& wide) {
@@ -458,13 +454,12 @@ std::wstring Utf8ToWide(const std::string& s) {
     return out;
 }
 
-void SetLastErrorFromErrno(int err) { SetErrno(err); }
 
 } // namespace MacWin32
 
 extern "C" {
 
-// --- errors ---------------------------------------------------------------------------------
+// --- errors ---
 
 DWORD GetLastError(void) { return t_lastError; }
 void SetLastError(DWORD code) { t_lastError = code; }
@@ -495,24 +490,6 @@ DWORD FormatMessageA(DWORD flags, LPCVOID, DWORD messageId, DWORD, LPSTR buffer,
     return static_cast<DWORD>(n);
 }
 
-DWORD FormatMessageW(DWORD flags, LPCVOID source, DWORD messageId, DWORD languageId, LPWSTR buffer, DWORD size, va_list* args) {
-    char narrow[512];
-    const DWORD n = FormatMessageA(flags & ~FORMAT_MESSAGE_ALLOCATE_BUFFER, source, messageId, languageId, narrow, sizeof(narrow), args);
-    const std::wstring wide = MacWin32::Utf8ToWide(std::string(narrow, n));
-    if (flags & FORMAT_MESSAGE_ALLOCATE_BUFFER) {
-        wchar_t* copy = static_cast<wchar_t*>(malloc((wide.size() + 1) * sizeof(wchar_t)));
-        if (!copy) return 0;
-        std::wmemcpy(copy, wide.c_str(), wide.size() + 1);
-        *reinterpret_cast<LPWSTR*>(buffer) = copy;
-        return static_cast<DWORD>(wide.size());
-    }
-    if (!buffer || size == 0) return 0;
-    const size_t count = std::min<size_t>(wide.size(), size - 1);
-    std::wmemcpy(buffer, wide.c_str(), count);
-    buffer[count] = L'\0';
-    return static_cast<DWORD>(count);
-}
-
 HANDLE LocalFree(HANDLE mem) {
     free(mem);
     return nullptr;
@@ -534,8 +511,6 @@ _se_translator_function _set_se_translator(_se_translator_function fn) {
 }
 
 void OutputDebugStringA(LPCSTR) {}
-void OutputDebugStringW(LPCWSTR) {}
-BOOL IsDebuggerPresent(void) { return FALSE; }
 
 USHORT RtlCaptureStackBackTrace(ULONG framesToSkip, ULONG framesToCapture, PVOID* backTrace, PDWORD backTraceHash) {
     void* frames[128];
@@ -569,9 +544,7 @@ PVOID RtlPcToFileHeader(PVOID pcValue, PVOID* baseOfImage) {
     return info.dli_fbase;
 }
 
-ULONGLONG VerSetConditionMask(ULONGLONG, DWORD, BYTE) { return 0; }
-
-// --- time ---------------------------------------------------------------------------------------
+// --- time ---
 
 DWORD GetTickCount(void) { return static_cast<DWORD>(NowSteadyNs() / 1000000ull); }
 ULONGLONG GetTickCount64(void) { return NowSteadyNs() / 1000000ull; }
@@ -598,24 +571,11 @@ void Sleep(DWORD milliseconds) {
     std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
 }
 
-DWORD SleepEx(DWORD milliseconds, BOOL) {
-    Sleep(milliseconds);
-    return 0;
-}
-
 void GetLocalTime(LPSYSTEMTIME st) {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
     struct tm t;
     localtime_r(&tv.tv_sec, &t);
-    FillSystemTime(t, static_cast<int>(tv.tv_usec / 1000), st);
-}
-
-void GetSystemTime(LPSYSTEMTIME st) {
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    struct tm t;
-    gmtime_r(&tv.tv_sec, &t);
     FillSystemTime(t, static_cast<int>(tv.tv_usec / 1000), st);
 }
 
@@ -650,27 +610,13 @@ BOOL FileTimeToSystemTime(const FILETIME* fileTime, LPSYSTEMTIME systemTime) {
     return TRUE;
 }
 
-BOOL SystemTimeToFileTime(const SYSTEMTIME* st, LPFILETIME ft) {
-    if (!st || !ft) return FALSE;
-    struct tm t {};
-    t.tm_year = st->wYear - 1900;
-    t.tm_mon = st->wMonth - 1;
-    t.tm_mday = st->wDay;
-    t.tm_hour = st->wHour;
-    t.tm_min = st->wMinute;
-    t.tm_sec = st->wSecond;
-    const time_t seconds = timegm(&t);
-    *ft = ToFileTime(static_cast<uint64_t>(seconds) * 10000000ull + st->wMilliseconds * 10000ull + kUnixEpochAsFileTime);
-    return TRUE;
-}
-
 LONG CompareFileTime(const FILETIME* a, const FILETIME* b) {
     const uint64_t x = FromFileTime(*a);
     const uint64_t y = FromFileTime(*b);
     return x < y ? -1 : (x > y ? 1 : 0);
 }
 
-// --- processes / threads / sync ----------------------------------------------------------------------
+// --- processes / threads / sync ---
 
 DWORD GetCurrentThreadId(void) {
     thread_local DWORD id = [] {
@@ -715,21 +661,14 @@ BOOL GetProcessTimes(HANDLE process, LPFILETIME creation, LPFILETIME exitTime, L
     return TRUE;
 }
 
-BOOL GetExitCodeProcess(HANDLE process, LPDWORD exitCode) {
-    const int pid = PidForHandle(process);
-    if (pid <= 0) return FALSE;
-    if (exitCode) *exitCode = MacOs::ProcessAlive(pid) ? STILL_ACTIVE : 0;
-    return TRUE;
-}
-
+// Upstream only terminates its own process.
 BOOL TerminateProcess(HANDLE process, UINT exitCode) {
-    const int pid = PidForHandle(process);
-    if (pid <= 0) return FALSE;
-    if (pid == getpid()) _exit(static_cast<int>(exitCode));
-    return kill(pid, SIGKILL) == 0;
+    if (PidForHandle(process) != getpid()) {
+        t_lastError = ERROR_ACCESS_DENIED;
+        return FALSE;
+    }
+    _exit(static_cast<int>(exitCode));
 }
-
-void ExitProcess(UINT exitCode) { exit(static_cast<int>(exitCode)); }
 
 BOOL QueryFullProcessImageNameA(HANDLE process, DWORD, LPSTR name, PDWORD size) {
     const int pid = PidForHandle(process);
@@ -739,18 +678,6 @@ BOOL QueryFullProcessImageNameA(HANDLE process, DWORD, LPSTR name, PDWORD size) 
         return FALSE;
     }
     std::memcpy(name, path.c_str(), path.size() + 1);
-    *size = static_cast<DWORD>(path.size());
-    return TRUE;
-}
-
-BOOL QueryFullProcessImageNameW(HANDLE process, DWORD, LPWSTR name, PDWORD size) {
-    const int pid = PidForHandle(process);
-    const std::wstring path = pid > 0 ? MacWin32::Utf8ToWide(MacOs::ProcessPath(pid)) : std::wstring();
-    if (path.empty() || !name || !size || *size <= path.size()) {
-        t_lastError = path.empty() ? ERROR_INVALID_HANDLE : ERROR_INSUFFICIENT_BUFFER;
-        return FALSE;
-    }
-    std::wmemcpy(name, path.c_str(), path.size() + 1);
     *size = static_cast<DWORD>(path.size());
     return TRUE;
 }
@@ -778,7 +705,6 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES, SIZE_T stackSize, LPTHREAD_START_ROUT
     t->param = param;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (stackSize > 0) pthread_attr_setstacksize(&attr, std::max<SIZE_T>(stackSize, PTHREAD_STACK_MIN));
     const int rc = pthread_create(&t->thread, &attr, &ThreadEntry, t);
     pthread_attr_destroy(&attr);
@@ -787,8 +713,10 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES, SIZE_T stackSize, LPTHREAD_START_ROUT
         SetErrno(rc);
         return nullptr;
     }
+    // Created joinable so the id can be read even if the thread already ended.
     uint64_t tid = 0;
     pthread_threadid_np(t->thread, &tid);
+    pthread_detach(t->thread);
     t->id = static_cast<DWORD>(tid);
     if (threadId) *threadId = t->id;
     return t;
@@ -804,13 +732,6 @@ BOOL SetThreadPriority(HANDLE thread, int priority) {
     return TRUE;
 }
 
-int GetThreadPriority(HANDLE) { return THREAD_PRIORITY_NORMAL; }
-
-HRESULT SetThreadDescription(HANDLE thread, PCWSTR description) {
-    if (thread == GetCurrentThread() && description) pthread_setname_np(MacWin32::WideToUtf8(description).c_str());
-    return S_OK;
-}
-
 BOOL DisableThreadLibraryCalls(HMODULE) { return TRUE; }
 
 HANDLE CreateEventW(LPSECURITY_ATTRIBUTES, BOOL manualReset, BOOL initialState, LPCWSTR) {
@@ -818,10 +739,6 @@ HANDLE CreateEventW(LPSECURITY_ATTRIBUTES, BOOL manualReset, BOOL initialState, 
     e->manualReset = manualReset != FALSE;
     e->signaled = initialState != FALSE;
     return e;
-}
-
-HANDLE CreateEventA(LPSECURITY_ATTRIBUTES sa, BOOL manualReset, BOOL initialState, LPCSTR) {
-    return CreateEventW(sa, manualReset, initialState, nullptr);
 }
 
 BOOL SetEvent(HANDLE event) {
@@ -966,39 +883,6 @@ DWORD WaitForMultipleObjects(DWORD count, const HANDLE* handles, BOOL waitAll, D
 
 void MemoryBarrier(void) { std::atomic_thread_fence(std::memory_order_seq_cst); }
 
-void YieldProcessor(void) {
-#if defined(__aarch64__)
-    __asm__ __volatile__("yield");
-#elif defined(__x86_64__)
-    __asm__ __volatile__("pause");
-#endif
-}
-
-DWORD GetEnvironmentVariableW(LPCWSTR name, LPWSTR buffer, DWORD size) {
-    std::string value;
-    if (!name || !GetEnv(MacWin32::WideToUtf8(name), value)) {
-        t_lastError = 203; // ERROR_ENVVAR_NOT_FOUND
-        return 0;
-    }
-    return CopyOut(MacWin32::Utf8ToWide(value), buffer, size);
-}
-
-DWORD GetEnvironmentVariableA(LPCSTR name, LPSTR buffer, DWORD size) {
-    std::string value;
-    if (!name || !GetEnv(name, value)) {
-        t_lastError = 203;
-        return 0;
-    }
-    return CopyOut(value, buffer, size);
-}
-
-BOOL SetEnvironmentVariableW(LPCWSTR name, LPCWSTR value) {
-    if (!name) return FALSE;
-    const std::string n = MacWin32::WideToUtf8(name);
-    if (!value) return unsetenv(n.c_str()) == 0;
-    return setenv(n.c_str(), MacWin32::WideToUtf8(value).c_str(), 1) == 0;
-}
-
 static std::string BuildCommandLine() {
     std::string line;
     for (const std::string& arg : MacOs::CommandLineArguments()) {
@@ -1022,12 +906,7 @@ LPWSTR GetCommandLineW(void) {
     return line.data();
 }
 
-LPSTR GetCommandLineA(void) {
-    static std::string line = BuildCommandLine();
-    return line.data();
-}
-
-// --- memory -----------------------------------------------------------------------------------
+// --- memory ---
 
 // Answers for mapped sections only.
 SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T length) {
@@ -1051,11 +930,10 @@ SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T le
     return 0;
 }
 
-HGLOBAL GlobalAlloc(UINT flags, SIZE_T bytes) {
+HGLOBAL GlobalAlloc(UINT, SIZE_T bytes) {
     GlobalObj* g = new GlobalObj();
     g->size = bytes;
     g->data.assign(bytes, 0);
-    (void)flags;
     return g;
 }
 
@@ -1076,7 +954,7 @@ SIZE_T GlobalSize(HGLOBAL mem) {
     return g ? g->size : 0;
 }
 
-// --- modules / resources ------------------------------------------------------------------------
+// --- modules / resources ---
 
 HMODULE GetModuleHandleA(LPCSTR name) {
     if (!name) return reinterpret_cast<HMODULE>(const_cast<mach_header*>(_dyld_get_image_header(0)));
@@ -1089,7 +967,7 @@ HMODULE GetModuleHandleA(LPCSTR name) {
             return reinterpret_cast<HMODULE>(const_cast<mach_header*>(_dyld_get_image_header(i)));
         }
     }
-    t_lastError = 126; // ERROR_MOD_NOT_FOUND
+    t_lastError = ERROR_MOD_NOT_FOUND;
     return nullptr;
 }
 
@@ -1104,7 +982,7 @@ BOOL GetModuleHandleExA(DWORD flags, LPCSTR name, HMODULE* module) {
         Dl_info info{};
         if (!name || dladdr(name, &info) == 0 || !info.dli_fbase) {
             *module = nullptr;
-            t_lastError = 126;
+            t_lastError = ERROR_MOD_NOT_FOUND;
             return FALSE;
         }
         *module = static_cast<HMODULE>(info.dli_fbase);
@@ -1119,27 +997,6 @@ BOOL GetModuleHandleExW(DWORD flags, LPCWSTR name, HMODULE* module) {
     if (!module) return FALSE;
     *module = GetModuleHandleW(name);
     return *module != nullptr;
-}
-
-DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size) {
-    std::string path;
-    if (!module) {
-        path = MacOs::ProcessPath(getpid());
-    } else {
-        path = ImagePathForHeader(module);
-    }
-    if (path.empty() || !filename || size == 0) {
-        t_lastError = ERROR_INVALID_HANDLE;
-        return 0;
-    }
-    if (path.size() >= size) {
-        std::memcpy(filename, path.c_str(), size - 1);
-        filename[size - 1] = '\0';
-        t_lastError = ERROR_INSUFFICIENT_BUFFER;
-        return size;
-    }
-    std::memcpy(filename, path.c_str(), path.size() + 1);
-    return static_cast<DWORD>(path.size());
 }
 
 DWORD GetModuleFileNameW(HMODULE module, LPWSTR filename, DWORD size) {
@@ -1172,72 +1029,35 @@ FARPROC GetProcAddress(HMODULE module, LPCSTR name) {
 
 HMODULE LoadLibraryA(LPCSTR) {
     // Windows DLLs never exist here; callers handle the failure.
-    t_lastError = 126;
+    t_lastError = ERROR_MOD_NOT_FOUND;
     return nullptr;
 }
 
 HMODULE LoadLibraryW(LPCWSTR) {
-    t_lastError = 126;
+    t_lastError = ERROR_MOD_NOT_FOUND;
     return nullptr;
 }
 
 HMODULE LoadLibraryExW(LPCWSTR, HANDLE, DWORD) {
-    t_lastError = 126;
+    t_lastError = ERROR_MOD_NOT_FOUND;
     return nullptr;
 }
 
 HMODULE LoadLibraryExA(LPCSTR, HANDLE, DWORD) {
-    t_lastError = 126;
+    t_lastError = ERROR_MOD_NOT_FOUND;
     return nullptr;
 }
 
 BOOL FreeLibrary(HMODULE) { return TRUE; }
 
-BOOL GetModuleInformation(HANDLE, HMODULE module, LPMODULEINFO info, DWORD size) {
-    if (!module || !info || size < sizeof(MODULEINFO)) return FALSE;
-    const mach_header_64* header = reinterpret_cast<const mach_header_64*>(module);
-    uint64_t lowest = UINT64_MAX;
-    uint64_t highest = 0;
-    const uint8_t* cmd = reinterpret_cast<const uint8_t*>(header + 1);
-    for (uint32_t i = 0; i < header->ncmds; ++i) {
-        const load_command* lc = reinterpret_cast<const load_command*>(cmd);
-        if (lc->cmd == LC_SEGMENT_64) {
-            const segment_command_64* seg = reinterpret_cast<const segment_command_64*>(lc);
-            if (std::strcmp(seg->segname, "__PAGEZERO") != 0) {
-                lowest = std::min<uint64_t>(lowest, seg->vmaddr);
-                highest = std::max<uint64_t>(highest, seg->vmaddr + seg->vmsize);
-            }
-        }
-        cmd += lc->cmdsize;
-    }
-    info->lpBaseOfDll = module;
-    info->SizeOfImage = (lowest < highest) ? static_cast<DWORD>(highest - lowest) : 0;
-    info->EntryPoint = nullptr;
-    return TRUE;
-}
-
-BOOL EnumProcessModules(HANDLE, HMODULE* modules, DWORD size, LPDWORD needed) {
-    const uint32_t count = _dyld_image_count();
-    if (needed) *needed = count * sizeof(HMODULE);
-    const DWORD capacity = size / sizeof(HMODULE);
-    for (uint32_t i = 0; i < count && i < capacity; ++i) {
-        modules[i] = reinterpret_cast<HMODULE>(const_cast<mach_header*>(_dyld_get_image_header(i)));
-    }
-    return TRUE;
-}
-
 HRSRC FindResourceW(HMODULE, LPCWSTR name, LPCWSTR) {
     if (!IS_INTRESOURCE(name)) {
-        t_lastError = 1813; // ERROR_RESOURCE_TYPE_NOT_FOUND
+        t_lastError = ERROR_RESOURCE_TYPE_NOT_FOUND;
         return nullptr;
     }
     const MacEmbeddedResource* r = FindEmbedded(static_cast<unsigned>(reinterpret_cast<uintptr_t>(name)));
-    if (!r) t_lastError = 1814; // ERROR_RESOURCE_NAME_NOT_FOUND
+    if (!r) t_lastError = ERROR_RESOURCE_NAME_NOT_FOUND;
     return reinterpret_cast<HRSRC>(const_cast<MacEmbeddedResource*>(r));
-}
-
-HRSRC FindResourceA(HMODULE module, LPCSTR name, LPCSTR type) {
-    return FindResourceW(module, reinterpret_cast<LPCWSTR>(name), reinterpret_cast<LPCWSTR>(type));
 }
 
 HGLOBAL LoadResource(HMODULE, HRSRC resource) { return resource; }
@@ -1252,17 +1072,7 @@ DWORD SizeofResource(HMODULE, HRSRC resource) {
     return r ? r->size : 0;
 }
 
-BOOL FreeResource(HGLOBAL) { return TRUE; }
-
-DWORD GetFileVersionInfoSizeW(LPCWSTR, LPDWORD handle) {
-    if (handle) *handle = 0;
-    return 0;
-}
-
-BOOL GetFileVersionInfoW(LPCWSTR, DWORD, DWORD, LPVOID) { return FALSE; }
-BOOL VerQueryValueW(LPCVOID, LPCWSTR, LPVOID*, PUINT) { return FALSE; }
-
-// --- strings / locale -----------------------------------------------------------------------------
+// --- strings / locale ---
 
 int MultiByteToWideChar(UINT, DWORD flags, LPCSTR multiByte, int multiByteCount, LPWSTR wide, int wideCount) {
     if (!multiByte) {
@@ -1316,10 +1126,7 @@ int GetLocaleInfoA(LCID, DWORD type, LPSTR data, int dataSize) {
     return 0;
 }
 
-LCID GetUserDefaultLCID(void) { return 0x0409; }
-LANGID GetUserDefaultUILanguage(void) { return 0x0409; }
-
-// --- files ---------------------------------------------------------------------------------------------
+// --- files ---
 
 HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD, LPSECURITY_ATTRIBUTES, DWORD disposition, DWORD flags, HANDLE) {
     const std::string path = NarrowPath(name);
@@ -1408,13 +1215,6 @@ BOOL FlushFileBuffers(HANDLE file) {
     return f && fsync(f->fd) == 0;
 }
 
-BOOL SetEndOfFile(HANDLE file) {
-    FileObj* f = As<FileObj>(file, ObjType::File);
-    if (!f) return FALSE;
-    const off_t pos = lseek(f->fd, 0, SEEK_CUR);
-    return pos >= 0 && ftruncate(f->fd, pos) == 0;
-}
-
 static int Whence(DWORD method) { return method == FILE_CURRENT ? SEEK_CUR : (method == FILE_END ? SEEK_END : SEEK_SET); }
 
 DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distanceHigh, DWORD method) {
@@ -1429,18 +1229,6 @@ DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distanceHigh, DWORD metho
     }
     if (distanceHigh) *distanceHigh = static_cast<LONG>(pos >> 32);
     return static_cast<DWORD>(pos & 0xFFFFFFFF);
-}
-
-BOOL SetFilePointerEx(HANDLE file, LARGE_INTEGER distance, PLARGE_INTEGER newPointer, DWORD method) {
-    FileObj* f = As<FileObj>(file, ObjType::File);
-    if (!f) return FALSE;
-    const off_t pos = lseek(f->fd, distance.QuadPart, Whence(method));
-    if (pos < 0) {
-        SetErrno(errno);
-        return FALSE;
-    }
-    if (newPointer) newPointer->QuadPart = pos;
-    return TRUE;
 }
 
 DWORD GetFileSize(HANDLE file, LPDWORD high) {
@@ -1510,8 +1298,6 @@ BOOL GetFileAttributesExW(LPCWSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID inf
     return GetFileAttributesExA(NarrowPath(name).c_str(), level, info);
 }
 
-BOOL SetFileAttributesW(LPCWSTR, DWORD) { return TRUE; }
-
 BOOL DeleteFileA(LPCSTR name) {
     if (unlink(NarrowPath(name).c_str()) != 0) {
         SetErrno(errno);
@@ -1568,25 +1354,6 @@ BOOL MoveFileExW(LPCWSTR from, LPCWSTR to, DWORD flags) {
 
 BOOL MoveFileW(LPCWSTR from, LPCWSTR to) { return MoveFileExW(from, to, MOVEFILE_COPY_ALLOWED); }
 
-BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags) {
-    const std::wstring wideFrom = MacWin32::Utf8ToWide(from ? from : "");
-    if (!to) return MoveFileExW(wideFrom.c_str(), nullptr, flags);
-    const std::wstring wideTo = MacWin32::Utf8ToWide(to);
-    return MoveFileExW(wideFrom.c_str(), wideTo.c_str(), flags);
-}
-
-BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists) { return CopyPath(NarrowPath(from), NarrowPath(to), failIfExists != FALSE); }
-
-BOOL RemoveDirectoryA(LPCSTR path) {
-    if (rmdir(NarrowPath(path).c_str()) != 0) {
-        SetErrno(errno);
-        return FALSE;
-    }
-    return TRUE;
-}
-
-BOOL CopyFileW(LPCWSTR from, LPCWSTR to, BOOL failIfExists) { return CopyPath(NarrowPath(from), NarrowPath(to), failIfExists != FALSE); }
-
 BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES) {
     if (mkdir(NarrowPath(path).c_str(), 0755) != 0) {
         t_lastError = (errno == EEXIST) ? ERROR_ALREADY_EXISTS : ErrnoToWin32(errno);
@@ -1597,26 +1364,7 @@ BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES) {
 
 BOOL CreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sa) { return CreateDirectoryA(NarrowPath(path).c_str(), sa); }
 
-BOOL RemoveDirectoryW(LPCWSTR path) {
-    if (rmdir(NarrowPath(path).c_str()) != 0) {
-        SetErrno(errno);
-        return FALSE;
-    }
-    return TRUE;
-}
-
 DWORD GetTempPathW(DWORD size, LPWSTR buffer) { return CopyOut(MacWin32::Utf8ToWide(MacOs::TemporaryDirectory()), buffer, size); }
-
-DWORD GetTempPathA(DWORD size, LPSTR buffer) { return CopyOut(MacOs::TemporaryDirectory(), buffer, size); }
-
-DWORD GetCurrentDirectoryA(DWORD size, LPSTR buffer) {
-    char cwd[PATH_MAX];
-    if (!getcwd(cwd, sizeof(cwd))) {
-        SetErrno(errno);
-        return 0;
-    }
-    return CopyOut(std::string(cwd), buffer, size);
-}
 
 DWORD GetCurrentDirectoryW(DWORD size, LPWSTR buffer) {
     char cwd[PATH_MAX];
@@ -1630,21 +1378,6 @@ DWORD GetCurrentDirectoryW(DWORD size, LPWSTR buffer) {
 UINT GetWindowsDirectoryW(LPWSTR buffer, UINT size) {
     // Callers append "\Fonts" to find system fonts.
     return CopyOut(std::wstring(L"/System/Library"), buffer, size);
-}
-
-DWORD GetFullPathNameW(LPCWSTR name, DWORD size, LPWSTR buffer, LPWSTR* filePart) {
-    std::string path = NarrowPath(name);
-    if (path.empty() || path[0] != '/') {
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd))) path = std::string(cwd) + "/" + path;
-    }
-    const std::wstring wide = MacWin32::Utf8ToWide(path);
-    const DWORD result = CopyOut(wide, buffer, size);
-    if (filePart && buffer && result < size) {
-        const size_t slash = wide.find_last_of(L'/');
-        *filePart = buffer + (slash == std::wstring::npos ? 0 : slash + 1);
-    }
-    return result;
 }
 
 HANDLE CreateFileMappingW(HANDLE file, LPSECURITY_ATTRIBUTES, DWORD, DWORD sizeHigh, DWORD sizeLow, LPCWSTR name) {
@@ -1745,7 +1478,7 @@ BOOL UnmapViewOfFile(LPCVOID base) {
     return TRUE;
 }
 
-// --- shlwapi / shell32 / ole32 -----------------------------------------------------------------------------
+// --- shlwapi / shell32 / ole32 ---
 
 BOOL PathIsRelativeA(LPCSTR path) {
     if (!path || !*path) return TRUE;
@@ -1755,16 +1488,6 @@ BOOL PathIsRelativeA(LPCSTR path) {
 }
 
 BOOL PathIsRelativeW(LPCWSTR path) { return PathIsRelativeA(MacWin32::WideToUtf8(path ? path : L"").c_str()); }
-
-BOOL PathFileExistsA(LPCSTR path) {
-    struct stat st {};
-    return stat(NarrowPath(path).c_str(), &st) == 0;
-}
-
-BOOL PathFileExistsW(LPCWSTR path) {
-    struct stat st {};
-    return stat(NarrowPath(path).c_str(), &st) == 0;
-}
 
 HRESULT SHGetKnownFolderPath(REFKNOWNFOLDERID rfid, DWORD, HANDLE, PWSTR* path) {
     if (!path) return E_INVALIDARG;
@@ -1823,15 +1546,7 @@ int SHCreateDirectoryExW(HWND, LPCWSTR path, const SECURITY_ATTRIBUTES*) {
     return result;
 }
 
-int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa) {
-    const std::wstring wide = MacWin32::Utf8ToWide(path ? path : "");
-    return SHCreateDirectoryExW(hwnd, wide.c_str(), sa);
-}
-
 void CoTaskMemFree(LPVOID pv) { free(pv); }
-HRESULT CoInitializeEx(LPVOID, DWORD) { return S_OK; }
-HRESULT CoInitialize(LPVOID) { return S_OK; }
-void CoUninitialize(void) {}
 
 HINSTANCE ShellExecuteW(HWND, LPCWSTR, LPCWSTR file, LPCWSTR, LPCWSTR, INT) {
     if (!file) return reinterpret_cast<HINSTANCE>(static_cast<intptr_t>(SE_ERR_NOASSOC));
@@ -1844,20 +1559,16 @@ HINSTANCE ShellExecuteW(HWND, LPCWSTR, LPCWSTR file, LPCWSTR, LPCWSTR, INT) {
     return reinterpret_cast<HINSTANCE>(static_cast<intptr_t>(MacOs::OpenUrl(target) ? 42 : SE_ERR_NOASSOC));
 }
 
-HINSTANCE ShellExecuteA(HWND hwnd, LPCSTR operation, LPCSTR file, LPCSTR parameters, LPCSTR directory, INT showCmd) {
+HINSTANCE ShellExecuteA(HWND hwnd, LPCSTR, LPCSTR file, LPCSTR, LPCSTR, INT showCmd) {
     const std::wstring wide = MacWin32::Utf8ToWide(file ? file : "");
-    (void)operation;
-    (void)parameters;
-    (void)directory;
     return ShellExecuteW(hwnd, nullptr, wide.c_str(), nullptr, nullptr, showCmd);
 }
 
-// --- dbghelp --------------------------------------------------------------------------------------------
+// --- dbghelp ---
 
 DWORD SymGetOptions(void) { return 0; }
 DWORD SymSetOptions(DWORD options) { return options; }
 BOOL SymInitialize(HANDLE, PCSTR, BOOL) { return TRUE; }
-BOOL SymCleanup(HANDLE) { return TRUE; }
 
 BOOL SymFromAddr(HANDLE, DWORD64 address, PDWORD64 displacement, PSYMBOL_INFO symbol) {
     Dl_info info{};
@@ -1873,10 +1584,8 @@ BOOL SymFromAddr(HANDLE, DWORD64 address, PDWORD64 displacement, PSYMBOL_INFO sy
 
 BOOL SymGetLineFromAddr64(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64) { return FALSE; }
 DWORD64 SymLoadModuleEx(HANDLE, HANDLE, PCSTR, PCSTR, DWORD64 base, DWORD, PVOID, DWORD) { return base; }
-BOOL SymRefreshModuleList(HANDLE) { return TRUE; }
-BOOL SymSetSearchPath(HANDLE, PCSTR) { return TRUE; }
 
-// --- registry -------------------------------------------------------------------------------------------
+// --- registry ---
 
 // The class registration of OBS's Windows virtual camera, which upstream opens
 // to see whether OBS Virtual Camera is installed. On macOS that camera is
@@ -1895,7 +1604,7 @@ LONG RegOpenKeyExA(HKEY key, LPCSTR subKey, DWORD, DWORD, HKEY* result) {
 
 LONG RegCloseKey(HKEY) { return ERROR_SUCCESS; }
 
-// --- MSVC CRT ----------------------------------------------------------------------------------------------
+// --- MSVC CRT ---
 
 int sprintf_s(char* buffer, size_t size, const char* format, ...) {
     va_list args;
@@ -1911,23 +1620,6 @@ int swprintf_s(wchar_t* buffer, size_t size, const wchar_t* format, ...) {
     const int r = vswprintf(buffer, size, format, args);
     va_end(args);
     return r;
-}
-
-int vsprintf_s(char* buffer, size_t size, const char* format, va_list args) { return vsnprintf(buffer, size, format, args); }
-
-errno_t strcpy_s(char* dest, size_t size, const char* src) {
-    if (!dest || size == 0) return EINVAL;
-    if (!src) {
-        dest[0] = '\0';
-        return EINVAL;
-    }
-    const size_t n = std::strlen(src);
-    if (n >= size) {
-        dest[0] = '\0';
-        return ERANGE;
-    }
-    std::memcpy(dest, src, n + 1);
-    return 0;
 }
 
 errno_t strncpy_s(char* dest, size_t size, const char* src, size_t count) {
@@ -1946,28 +1638,6 @@ errno_t strncpy_s(char* dest, size_t size, const char* src, size_t count) {
     }
     std::memcpy(dest, src, n);
     dest[n] = '\0';
-    return 0;
-}
-
-errno_t strcat_s(char* dest, size_t size, const char* src) {
-    if (!dest || !src) return EINVAL;
-    const size_t existing = strnlen(dest, size);
-    if (existing >= size) return EINVAL;
-    return strcpy_s(dest + existing, size - existing, src);
-}
-
-errno_t wcscpy_s(wchar_t* dest, size_t size, const wchar_t* src) {
-    if (!dest || size == 0) return EINVAL;
-    if (!src) {
-        dest[0] = L'\0';
-        return EINVAL;
-    }
-    const size_t n = std::wcslen(src);
-    if (n >= size) {
-        dest[0] = L'\0';
-        return ERANGE;
-    }
-    std::wmemcpy(dest, src, n + 1);
     return 0;
 }
 
@@ -1990,18 +1660,7 @@ errno_t wcsncpy_s(wchar_t* dest, size_t size, const wchar_t* src, size_t count) 
     return 0;
 }
 
-errno_t wcscat_s(wchar_t* dest, size_t size, const wchar_t* src) {
-    if (!dest || !src) return EINVAL;
-    const size_t existing = wcsnlen(dest, size);
-    if (existing >= size) return EINVAL;
-    return wcscpy_s(dest + existing, size - existing, src);
-}
-
-size_t strnlen_s(const char* str, size_t size) { return str ? strnlen(str, size) : 0; }
-size_t wcsnlen_s(const wchar_t* str, size_t size) { return str ? wcsnlen(str, size) : 0; }
-
 errno_t localtime_s(struct tm* result, const time_t* time) { return (result && time && localtime_r(time, result)) ? 0 : EINVAL; }
-errno_t gmtime_s(struct tm* result, const time_t* time) { return (result && time && gmtime_r(time, result)) ? 0 : EINVAL; }
 
 errno_t getenv_s(size_t* required, char* buffer, size_t size, const char* name) {
     std::string value;
@@ -2038,17 +1697,6 @@ errno_t _wgetenv_s(size_t* required, wchar_t* buffer, size_t size, const wchar_t
     return 0;
 }
 
-errno_t _dupenv_s(char** buffer, size_t* size, const char* name) {
-    std::string value;
-    if (!buffer) return EINVAL;
-    *buffer = nullptr;
-    if (size) *size = 0;
-    if (!name || !GetEnv(name, value)) return 0;
-    *buffer = strdup(value.c_str());
-    if (size) *size = value.size() + 1;
-    return 0;
-}
-
 errno_t fopen_s(FILE** file, const char* name, const char* mode) {
     if (!file) return EINVAL;
     *file = fopen(NarrowPath(name).c_str(), mode);
@@ -2072,9 +1720,6 @@ errno_t _wfopen_s(FILE** file, const wchar_t* name, const wchar_t* mode) {
     *file = _wfopen(name, mode);
     return *file ? 0 : errno;
 }
-
-int _wremove(const wchar_t* name) { return remove(NarrowPath(name).c_str()); }
-int _wrename(const wchar_t* from, const wchar_t* to) { return rename(NarrowPath(from).c_str(), NarrowPath(to).c_str()); }
 
 } // extern "C"
 

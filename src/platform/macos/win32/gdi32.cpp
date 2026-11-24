@@ -93,18 +93,22 @@ bool DecodeIconImage(const uint8_t* data, size_t size, std::vector<uint8_t>& rgb
     const uint16_t bitCount = Le16(data + 14);
     const uint32_t colorsUsed = Le32(data + 32);
     if (w <= 0 || fullHeight == 0 || headerSize < 40 || headerSize > size) return false;
+    if (bitCount != 1 && bitCount != 4 && bitCount != 8 && bitCount != 24 && bitCount != 32) return false;
     const int h = std::abs(fullHeight) / 2;
     if (h <= 0) return false;
 
-    const uint8_t* palette = data + headerSize;
     size_t paletteEntries = 0;
     if (bitCount <= 8) paletteEntries = colorsUsed ? colorsUsed : (1u << bitCount);
-    const uint8_t* xorBits = palette + paletteEntries * 4;
+    if (paletteEntries > (size - headerSize) / 4) return false;
+    const size_t xorOffset = headerSize + paletteEntries * 4;
     const size_t xorStride = ((static_cast<size_t>(w) * bitCount + 31) / 32) * 4;
-    const uint8_t* andBits = xorBits + xorStride * static_cast<size_t>(h);
+    if (xorStride > (size - xorOffset) / static_cast<size_t>(h)) return false;
+    const size_t andOffset = xorOffset + xorStride * static_cast<size_t>(h);
     const size_t andStride = ((static_cast<size_t>(w) + 31) / 32) * 4;
-    const bool hasAnd = (andBits + andStride * static_cast<size_t>(h)) <= data + size;
-    if (xorBits + xorStride * static_cast<size_t>(h) > data + size) return false;
+    const bool hasAnd = andStride <= (size - andOffset) / static_cast<size_t>(h);
+    const uint8_t* palette = data + headerSize;
+    const uint8_t* xorBits = data + xorOffset;
+    const uint8_t* andBits = data + andOffset;
 
     rgba.assign(static_cast<size_t>(w) * h * 4, 0);
     bool anyAlpha = false;
@@ -217,7 +221,7 @@ std::vector<uint8_t> Resize(const std::vector<uint8_t>& src, int sw, int sh, int
 MacGdi::CursorObject* LoadIconFile(const std::string& path, bool isCursor, int wantW, int wantH) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        MacWin32::SetLastErrorFromErrno(ENOENT);
+        SetLastError(ERROR_FILE_NOT_FOUND);
         return nullptr;
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -250,7 +254,7 @@ MacGdi::CursorObject* LoadIconFile(const std::string& path, bool isCursor, int w
     const uint8_t* entry = bytes.data() + 6 + 16 * best;
     const uint32_t imageSize = Le32(entry + 8);
     const uint32_t imageOffset = Le32(entry + 12);
-    if (imageOffset >= bytes.size() || imageSize == 0 || imageOffset + imageSize > bytes.size()) {
+    if (imageOffset >= bytes.size() || imageSize == 0 || imageSize > bytes.size() - imageOffset) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return nullptr;
     }
@@ -360,8 +364,6 @@ HCURSOR LoadCursorW(HINSTANCE, LPCWSTR name) {
     return cursor;
 }
 
-HCURSOR LoadCursorA(HINSTANCE instance, LPCSTR name) { return LoadCursorW(instance, reinterpret_cast<LPCWSTR>(name)); }
-
 HANDLE LoadImageW(HINSTANCE, LPCWSTR name, UINT type, int cx, int cy, UINT flags) {
     if (!(flags & LR_LOADFROMFILE) || !name || IS_INTRESOURCE(name)) {
         if (IS_INTRESOURCE(name) && type == IMAGE_CURSOR) return LoadCursorW(nullptr, name);
@@ -376,12 +378,6 @@ HANDLE LoadImageW(HINSTANCE, LPCWSTR name, UINT type, int cx, int cy, UINT flags
     if (type == IMAGE_CURSOR || type == IMAGE_ICON) return LoadIconFile(path, type == IMAGE_CURSOR, w, h);
     SetLastError(ERROR_INVALID_PARAMETER);
     return nullptr;
-}
-
-HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags) {
-    if (IS_INTRESOURCE(name)) return LoadImageW(instance, reinterpret_cast<LPCWSTR>(name), type, cx, cy, flags);
-    const std::wstring wide = MacWin32::Utf8ToWide(name);
-    return LoadImageW(instance, wide.c_str(), type, cx, cy, flags);
 }
 
 HANDLE CopyImage(HANDLE image, UINT, int cx, int cy, UINT flags) {
@@ -412,26 +408,6 @@ static BOOL DestroyCursorObject(HCURSOR cursor) {
 
 BOOL DestroyCursor(HCURSOR cursor) { return DestroyCursorObject(cursor); }
 BOOL DestroyIcon(HICON icon) { return DestroyCursorObject(reinterpret_cast<HCURSOR>(icon)); }
-
-HICON CreateIconIndirect(PICONINFO info) {
-    if (!info || !info->hbmColor) return nullptr;
-    BitmapObject* color = As<BitmapObject>(info->hbmColor, GdiType::Bitmap);
-    if (!color || color->bitsPerPixel != 32) return nullptr;
-    auto* cursor = new MacGdi::CursorObject();
-    cursor->icon = info->fIcon != FALSE;
-    cursor->width = color->width;
-    cursor->height = color->height;
-    cursor->hotX = static_cast<int>(info->xHotspot);
-    cursor->hotY = static_cast<int>(info->yHotspot);
-    cursor->rgba.resize(color->pixels.size());
-    for (size_t i = 0; i + 3 < color->pixels.size(); i += 4) {
-        cursor->rgba[i + 0] = color->pixels[i + 2];
-        cursor->rgba[i + 1] = color->pixels[i + 1];
-        cursor->rgba[i + 2] = color->pixels[i + 0];
-        cursor->rgba[i + 3] = color->pixels[i + 3];
-    }
-    return reinterpret_cast<HICON>(cursor);
-}
 
 static BOOL FillIconInfo(HICON icon, BOOL& fIcon, DWORD& hotX, DWORD& hotY, HBITMAP& mask, HBITMAP& color) {
     MacGdi::CursorObject* c = MacGdi::AsCursor(reinterpret_cast<HCURSOR>(icon));
@@ -489,8 +465,6 @@ HDC GetDC(HWND hwnd) {
     return reinterpret_cast<HDC>(dc);
 }
 
-HDC GetWindowDC(HWND hwnd) { return GetDC(hwnd); }
-
 int ReleaseDC(HWND, HDC) { return 1; }
 
 HDC CreateCompatibleDC(HDC) { return reinterpret_cast<HDC>(new DcObject()); }
@@ -510,32 +484,6 @@ HWND WindowFromDC(HDC hdc) {
 HBITMAP CreateCompatibleBitmap(HDC, int width, int height) {
     if (width <= 0 || height <= 0) return nullptr;
     return reinterpret_cast<HBITMAP>(MakeBitmap(width, height, 32));
-}
-
-HBITMAP CreateDIBSection(HDC, const BITMAPINFO* bmi, UINT, void** bits, HANDLE, DWORD) {
-    if (!bmi || bmi->bmiHeader.biBitCount != 32) return nullptr;
-    const int w = bmi->bmiHeader.biWidth;
-    const int h = std::abs(bmi->bmiHeader.biHeight);
-    if (w <= 0 || h <= 0) return nullptr;
-    BitmapObject* b = MakeBitmap(w, h, 32);
-    if (bits) *bits = b->pixels.data();
-    return reinterpret_cast<HBITMAP>(b);
-}
-
-HBITMAP CreateBitmap(int width, int height, UINT, UINT bitCount, const void* bits) {
-    if (width <= 0 || height <= 0) return nullptr;
-    BitmapObject* b = MakeBitmap(width, height, bitCount == 1 ? 1 : 32);
-    if (bits && bitCount == 32) std::memcpy(b->pixels.data(), bits, b->pixels.size());
-    if (bits && bitCount == 1) {
-        const size_t stride = ((static_cast<size_t>(width) + 15) / 16) * 2;
-        const uint8_t* src = static_cast<const uint8_t*>(bits);
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                b->pixels[static_cast<size_t>(y) * width + x] = (src[y * stride + x / 8] >> (7 - (x % 8))) & 1;
-            }
-        }
-    }
-    return reinterpret_cast<HBITMAP>(b);
 }
 
 HGDIOBJ SelectObject(HDC hdc, HGDIOBJ obj) {
@@ -568,8 +516,6 @@ int GetObjectW(HANDLE obj, int size, LPVOID out) {
     bm->bmBits = nullptr;
     return sizeof(BITMAP);
 }
-
-int GetObjectA(HANDLE obj, int size, LPVOID out) { return GetObjectW(obj, size, out); }
 
 int GetDIBits(HDC, HBITMAP bitmap, UINT start, UINT lines, LPVOID bits, LPBITMAPINFO bmi, UINT) {
     BitmapObject* b = As<BitmapObject>(bitmap, GdiType::Bitmap);
@@ -719,43 +665,12 @@ HGDIOBJ GetStockObject(int index) {
     }
 }
 
-HBRUSH CreateSolidBrush(COLORREF color) {
-    auto* b = new BrushObject();
-    b->color = color;
-    return reinterpret_cast<HBRUSH>(b);
-}
-
 int SetROP2(HDC hdc, int mode) {
     DcObject* dc = As<DcObject>(hdc, GdiType::Dc);
     if (!dc) return 0;
     const int previous = dc->rop2;
     dc->rop2 = mode;
     return previous;
-}
-
-BOOL DrawIconEx(HDC hdc, int x, int y, HICON icon, int cx, int cy, UINT, HBRUSH, UINT) {
-    DcObject* dc = As<DcObject>(hdc, GdiType::Dc);
-    BitmapObject* b = dc ? As<BitmapObject>(dc->selected, GdiType::Bitmap) : nullptr;
-    MacGdi::CursorObject* c = MacGdi::AsCursor(reinterpret_cast<HCURSOR>(icon));
-    if (!b || !c || b->bitsPerPixel != 32 || c->width <= 0) return FALSE;
-    const int w = cx > 0 ? cx : c->width;
-    const int h = cy > 0 ? cy : c->height;
-    const std::vector<uint8_t> src = Resize(c->rgba, c->width, c->height, w, h);
-    for (int j = 0; j < h; ++j) {
-        for (int i = 0; i < w; ++i) {
-            const int dx = x + i;
-            const int dy = y + j;
-            if (dx < 0 || dy < 0 || dx >= b->width || dy >= b->height) continue;
-            const uint8_t* s = &src[(static_cast<size_t>(j) * w + i) * 4];
-            uint8_t* d = &b->pixels[(static_cast<size_t>(dy) * b->width + dx) * 4];
-            const float a = s[3] / 255.0f;
-            d[0] = static_cast<uint8_t>(s[2] * a + d[0] * (1 - a));
-            d[1] = static_cast<uint8_t>(s[1] * a + d[1] * (1 - a));
-            d[2] = static_cast<uint8_t>(s[0] * a + d[2] * (1 - a));
-            d[3] = static_cast<uint8_t>(std::max<float>(d[3], s[3]));
-        }
-    }
-    return TRUE;
 }
 
 int GetDeviceCaps(HDC hdc, int index) {

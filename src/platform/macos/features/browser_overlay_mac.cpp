@@ -1,7 +1,7 @@
 // Browser overlays on macOS. This is src/features/browser_overlay.cpp with
-// WebView2 replaced by MacBrowserView (WKWebView). WebKit reports events on the
-// main thread; they are queued to the overlay thread, where WebView2 delivers
-// them, so the cache entry state is handled exactly as on Windows.
+// WebView2 replaced by MacBrowserView (WKWebView). WebKit reports navigation
+// events on the main thread; they are queued to the overlay thread, where
+// WebView2 delivers them, so the cache entry state is handled as on Windows.
 
 #include "features/browser_overlay.h"
 
@@ -810,8 +810,8 @@ void TryCaptureBrowserOverlay(const std::string& overlayId) {
         entry.lastCaptureTime = now;
     }
 
-    // The snapshot completes on the main thread; only the capture bookkeeping
-    // and the decode hand-off happen there, both under the cache lock.
+    // The snapshot completes on the main thread, which only updates the capture
+    // bookkeeping and queues the decode.
     MacBrowserView::Capture(overlayId,
                             [overlayId](MacBrowserView::Snapshot snapshot) { OnBrowserOverlayCaptured(overlayId, std::move(snapshot)); });
 }

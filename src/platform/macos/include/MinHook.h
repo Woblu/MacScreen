@@ -26,12 +26,5 @@ typedef enum MH_STATUS {
 #define MH_ALL_HOOKS nullptr
 
 inline MH_STATUS MH_Initialize(void) { return MH_OK; }
-inline MH_STATUS MH_Uninitialize(void) { return MH_OK; }
 inline MH_STATUS MH_CreateHook(LPVOID, LPVOID, LPVOID*) { return MH_ERROR_UNSUPPORTED_FUNCTION; }
-inline MH_STATUS MH_CreateHookEx(ULONG_PTR, LPVOID, LPVOID, LPVOID*) { return MH_ERROR_UNSUPPORTED_FUNCTION; }
 inline MH_STATUS MH_EnableHook(LPVOID) { return MH_OK; }
-inline MH_STATUS MH_EnableHookEx(ULONG_PTR, LPVOID) { return MH_OK; }
-inline MH_STATUS MH_DisableHook(LPVOID) { return MH_OK; }
-inline MH_STATUS MH_RemoveHook(LPVOID) { return MH_OK; }
-inline MH_STATUS MH_RemoveHookEx(ULONG_PTR, LPVOID) { return MH_OK; }
-inline const char* MH_StatusToString(MH_STATUS) { return "MH_ERROR_UNSUPPORTED_FUNCTION"; }

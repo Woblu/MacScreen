@@ -33,7 +33,6 @@ unsigned VkFromScanCode(unsigned scanCode, bool sided);
 
 // WM_KEYDOWN carries VK_SHIFT/VK_CONTROL/VK_MENU for modifiers.
 unsigned GenericVk(unsigned vk);
-bool IsExtendedKeyVk(unsigned vk);
 
 // Win32 GetKeyNameText semantics for a scan code.
 std::string KeyName(unsigned scanCode);

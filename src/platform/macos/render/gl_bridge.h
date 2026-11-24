@@ -19,6 +19,9 @@ constexpr unsigned kNoTexture = 0xFFFFFFFFu;
 // True on the current thread while Toolscreen's context is current.
 bool IsToolscreenContextCurrent();
 
+// True on the current thread while the game's context is current.
+bool IsGameContextCurrent();
+
 // FBO standing in for framebuffer 0 in Toolscreen's context (0 if none).
 unsigned ScreenFramebuffer();
 
@@ -38,11 +41,7 @@ void EndToolscreenFrame();
 // game's own draw showed the wrong part of the frame.
 void RedrawClippedGameViewport(unsigned gameTexture, const int viewport[4], int framebufferWidth, int framebufferHeight);
 
-// Creates Toolscreen's context next to the given game context and initializes
-// GLEW in it. Safe to call repeatedly. Restores the previously current context.
-bool EnsureToolscreenContext(void* gameCglContext);
-
-// Toolscreen's CGL context, or nullptr before EnsureToolscreenContext succeeded.
+// Toolscreen's CGL context, or nullptr before the first frame.
 void* ToolscreenContext();
 
 // Makes the game's context current for its lifetime if Toolscreen's context is

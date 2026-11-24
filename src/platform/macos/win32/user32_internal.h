@@ -9,7 +9,7 @@
 
 namespace MacWin32 {
 
-// --- the game window ----------------------------------------------------------------
+// --- the game window ---
 
 // Registers the GLFW window as an HWND. `defaultProc` plays the part of GLFW's
 // own window procedure and receives whatever Toolscreen forwards to the game.
@@ -46,12 +46,11 @@ void PumpMessages();
 // True while a message is being delivered on this thread.
 bool InDispatch();
 
-// --- keyboard state ---------------------------------------------------------------------
+// --- keyboard state ---
 
 // Updates GetAsyncKeyState/GetKeyState/GetKeyboardState for a sided VK
 // (VK_LSHIFT, ...) or mouse button VK. Generic modifiers follow automatically.
 void SetKeyDown(unsigned vk, bool down);
-void ReleaseAllKeys();
 bool IsKeyDown(unsigned vk);
 
 // Runs WH_KEYBOARD_LL hooks. Returns true if a hook swallowed the event.
@@ -61,7 +60,7 @@ bool HasLowLevelKeyboardHooks();
 // SendInput events are handed to this callback from PumpMessages.
 void SetInputInjector(std::function<void(const INPUT&)> injector);
 
-// --- cursor -------------------------------------------------------------------------------
+// --- cursor ---
 
 struct CursorCallbacks {
     // Win32 visibility (ShowCursor counter, SetCursor(NULL)) changed.
@@ -73,10 +72,6 @@ struct CursorCallbacks {
 };
 void SetCursorCallbacks(CursorCallbacks callbacks);
 bool IsWin32CursorVisible();
-// Cursor last set with SetCursor (nullptr = hidden).
-HCURSOR CurrentCursor();
-// Re-applies the current cursor image (after GLFW reset it).
-void ReapplyCursor();
 // ClipCursor rectangle in screen pixels, if any.
 bool GetCursorClip(RECT& rect);
 // Mouse capture / leave tracking for TrackMouseEvent.

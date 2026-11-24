@@ -135,8 +135,6 @@ void Install() {
     _dyld_register_func_for_add_image(&OnImageAdded);
 }
 
-void* GlfwLibraryHandle() { return g_glfwHandle.load(std::memory_order_acquire); }
-
 void* ResolveGlfw(const char* name) {
     void* handle = g_glfwHandle.load(std::memory_order_acquire);
     return handle ? dlsym(handle, name) : nullptr;

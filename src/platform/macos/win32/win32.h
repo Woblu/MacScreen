@@ -23,9 +23,7 @@
 #include <string.h>
 #include <wchar.h>
 
-// ---------------------------------------------------------------------------
-// Compiler / CRT compatibility
-// ---------------------------------------------------------------------------
+// --- Compiler / CRT compatibility ---
 #ifndef __forceinline
 #define __forceinline inline __attribute__((always_inline))
 #endif
@@ -43,10 +41,7 @@
 #define _wcsnicmp wcsncasecmp
 #define _strdup strdup
 #define _wcsdup wcsdup
-#define _snprintf snprintf
 #define _vsnprintf vsnprintf
-#define _snwprintf swprintf
-#define _countof(a) (sizeof(a) / sizeof((a)[0]))
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
 #endif
@@ -194,9 +189,7 @@ typedef struct _MODULEINFO {
 #define THREAD_ALL_ACCESS 0x1FFFFF
 #define STILL_ACTIVE 259
 
-// ---------------------------------------------------------------------------
-// user32 / gdi32 structures
-// ---------------------------------------------------------------------------
+// --- user32 / gdi32 structures ---
 typedef struct tagWNDCLASSEXW {
     UINT cbSize;
     UINT style;
@@ -352,7 +345,6 @@ typedef struct tagBITMAPINFO {
 #define SMTO_BLOCK 0x0001
 #define SMTO_ABORTIFHUNG 0x0002
 
-#define SW_SHOWNORMAL_EX SW_SHOWNORMAL
 #define SE_ERR_NOASSOC 31
 
 typedef UINT_PTR(CALLBACK* LPOFNHOOKPROC)(HWND, UINT, WPARAM, LPARAM);
@@ -468,8 +460,6 @@ typedef struct _OSVERSIONINFOEXW {
 #define _WIN32_WINNT_WIN10 0x0A00
 #define _WIN32_WINNT_VISTA 0x0600
 #define _WIN32_WINNT_WIN7 0x0601
-#define HIBYTE_WORD(x) HIBYTE(x)
-#define LOBYTE_WORD(x) LOBYTE(x)
 
 // IME (imm.h)
 #define GCS_COMPSTR 0x0008
@@ -568,63 +558,48 @@ typedef struct _IMAGEHLP_LINE64 {
     DWORD64 Address;
 } IMAGEHLP_LINE64, *PIMAGEHLP_LINE64;
 
-// ---------------------------------------------------------------------------
-// Functions
-// ---------------------------------------------------------------------------
+// --- Functions ---
 extern "C" {
 
-// --- errors ---------------------------------------------------------------
+// --- errors ---
 DWORD GetLastError(void);
 void SetLastError(DWORD code);
 DWORD FormatMessageA(DWORD flags, LPCVOID source, DWORD messageId, DWORD languageId, LPSTR buffer, DWORD size, va_list* args);
-DWORD FormatMessageW(DWORD flags, LPCVOID source, DWORD messageId, DWORD languageId, LPWSTR buffer, DWORD size, va_list* args);
 HANDLE LocalFree(HANDLE mem);
 LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER filter);
 _se_translator_function _set_se_translator(_se_translator_function fn);
 void OutputDebugStringA(LPCSTR text);
-void OutputDebugStringW(LPCWSTR text);
-BOOL IsDebuggerPresent(void);
 USHORT RtlCaptureStackBackTrace(ULONG framesToSkip, ULONG framesToCapture, PVOID* backTrace, PDWORD backTraceHash);
 #define CaptureStackBackTrace RtlCaptureStackBackTrace
 PVOID RtlPcToFileHeader(PVOID pcValue, PVOID* baseOfImage);
-ULONGLONG VerSetConditionMask(ULONGLONG conditionMask, DWORD typeMask, BYTE condition);
 
-// --- time ------------------------------------------------------------------
+// --- time ---
 DWORD GetTickCount(void);
 ULONGLONG GetTickCount64(void);
 BOOL QueryPerformanceCounter(LARGE_INTEGER* count);
 BOOL QueryPerformanceFrequency(LARGE_INTEGER* frequency);
 void Sleep(DWORD milliseconds);
-DWORD SleepEx(DWORD milliseconds, BOOL alertable);
 void GetLocalTime(LPSYSTEMTIME st);
-void GetSystemTime(LPSYSTEMTIME st);
 void GetSystemTimeAsFileTime(LPFILETIME ft);
 BOOL FileTimeToLocalFileTime(const FILETIME* fileTime, LPFILETIME localFileTime);
 BOOL FileTimeToSystemTime(const FILETIME* fileTime, LPSYSTEMTIME systemTime);
-BOOL SystemTimeToFileTime(const SYSTEMTIME* systemTime, LPFILETIME fileTime);
 LONG CompareFileTime(const FILETIME* a, const FILETIME* b);
 
-// --- processes / threads / sync ---------------------------------------------
+// --- processes / threads / sync ---
 DWORD GetCurrentThreadId(void);
 DWORD GetCurrentProcessId(void);
 HANDLE GetCurrentProcess(void);
 HANDLE GetCurrentThread(void);
 HANDLE OpenProcess(DWORD access, BOOL inherit, DWORD processId);
 BOOL GetProcessTimes(HANDLE process, LPFILETIME creation, LPFILETIME exitTime, LPFILETIME kernel, LPFILETIME user);
-BOOL GetExitCodeProcess(HANDLE process, LPDWORD exitCode);
 BOOL TerminateProcess(HANDLE process, UINT exitCode);
 BOOL QueryFullProcessImageNameA(HANDLE process, DWORD flags, LPSTR name, PDWORD size);
-BOOL QueryFullProcessImageNameW(HANDLE process, DWORD flags, LPWSTR name, PDWORD size);
-void ExitProcess(UINT exitCode);
 BOOL CloseHandle(HANDLE handle);
 HANDLE CreateThread(LPSECURITY_ATTRIBUTES attrs, SIZE_T stackSize, LPTHREAD_START_ROUTINE start, LPVOID param, DWORD flags,
                     LPDWORD threadId);
 BOOL SetThreadPriority(HANDLE thread, int priority);
-int GetThreadPriority(HANDLE thread);
-HRESULT SetThreadDescription(HANDLE thread, PCWSTR description);
 BOOL DisableThreadLibraryCalls(HMODULE module);
 HANDLE CreateEventW(LPSECURITY_ATTRIBUTES attrs, BOOL manualReset, BOOL initialState, LPCWSTR name);
-HANDLE CreateEventA(LPSECURITY_ATTRIBUTES attrs, BOOL manualReset, BOOL initialState, LPCSTR name);
 BOOL SetEvent(HANDLE event);
 BOOL ResetEvent(HANDLE event);
 HANDLE CreateWaitableTimerW(LPSECURITY_ATTRIBUTES attrs, BOOL manualReset, LPCWSTR name);
@@ -635,14 +610,9 @@ BOOL CancelWaitableTimer(HANDLE timer);
 DWORD WaitForSingleObject(HANDLE handle, DWORD milliseconds);
 DWORD WaitForMultipleObjects(DWORD count, const HANDLE* handles, BOOL waitAll, DWORD milliseconds);
 void MemoryBarrier(void);
-void YieldProcessor(void);
-DWORD GetEnvironmentVariableW(LPCWSTR name, LPWSTR buffer, DWORD size);
-DWORD GetEnvironmentVariableA(LPCSTR name, LPSTR buffer, DWORD size);
-BOOL SetEnvironmentVariableW(LPCWSTR name, LPCWSTR value);
 LPWSTR GetCommandLineW(void);
-LPSTR GetCommandLineA(void);
 
-// --- memory ------------------------------------------------------------------
+// --- memory ---
 SIZE_T VirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T length);
 HGLOBAL GlobalAlloc(UINT flags, SIZE_T bytes);
 LPVOID GlobalLock(HGLOBAL mem);
@@ -650,41 +620,31 @@ BOOL GlobalUnlock(HGLOBAL mem);
 HGLOBAL GlobalFree(HGLOBAL mem);
 SIZE_T GlobalSize(HGLOBAL mem);
 
-// --- modules / resources -----------------------------------------------------
+// --- modules / resources ---
 HMODULE GetModuleHandleW(LPCWSTR name);
 HMODULE GetModuleHandleA(LPCSTR name);
 BOOL GetModuleHandleExW(DWORD flags, LPCWSTR name, HMODULE* module);
 BOOL GetModuleHandleExA(DWORD flags, LPCSTR name, HMODULE* module);
 DWORD GetModuleFileNameW(HMODULE module, LPWSTR filename, DWORD size);
-DWORD GetModuleFileNameA(HMODULE module, LPSTR filename, DWORD size);
 FARPROC GetProcAddress(HMODULE module, LPCSTR name);
 HMODULE LoadLibraryA(LPCSTR name);
 HMODULE LoadLibraryW(LPCWSTR name);
 HMODULE LoadLibraryExW(LPCWSTR name, HANDLE file, DWORD flags);
 HMODULE LoadLibraryExA(LPCSTR name, HANDLE file, DWORD flags);
 BOOL FreeLibrary(HMODULE module);
-BOOL GetModuleInformation(HANDLE process, HMODULE module, LPMODULEINFO info, DWORD size);
-BOOL EnumProcessModules(HANDLE process, HMODULE* modules, DWORD size, LPDWORD needed);
 HRSRC FindResourceW(HMODULE module, LPCWSTR name, LPCWSTR type);
-HRSRC FindResourceA(HMODULE module, LPCSTR name, LPCSTR type);
 HGLOBAL LoadResource(HMODULE module, HRSRC resource);
 LPVOID LockResource(HGLOBAL resData);
 DWORD SizeofResource(HMODULE module, HRSRC resource);
-BOOL FreeResource(HGLOBAL resData);
-DWORD GetFileVersionInfoSizeW(LPCWSTR filename, LPDWORD handle);
-BOOL GetFileVersionInfoW(LPCWSTR filename, DWORD handle, DWORD len, LPVOID data);
-BOOL VerQueryValueW(LPCVOID block, LPCWSTR subBlock, LPVOID* buffer, PUINT len);
 
-// --- strings / locale --------------------------------------------------------
+// --- strings / locale ---
 int MultiByteToWideChar(UINT codePage, DWORD flags, LPCSTR multiByte, int multiByteCount, LPWSTR wide, int wideCount);
 int WideCharToMultiByte(UINT codePage, DWORD flags, LPCWSTR wide, int wideCount, LPSTR multiByte, int multiByteCount,
                         LPCSTR defaultChar, LPBOOL usedDefaultChar);
 BOOL IsDBCSLeadByte(BYTE testChar);
 int GetLocaleInfoA(LCID locale, DWORD type, LPSTR data, int dataSize);
-LCID GetUserDefaultLCID(void);
-LANGID GetUserDefaultUILanguage(void);
 
-// --- files -------------------------------------------------------------------
+// --- files ---
 HANDLE CreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags,
                    HANDLE templateFile);
 HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags,
@@ -692,9 +652,7 @@ HANDLE CreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES
 BOOL ReadFile(HANDLE file, LPVOID buffer, DWORD toRead, LPDWORD read, LPOVERLAPPED overlapped);
 BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD toWrite, LPDWORD written, LPOVERLAPPED overlapped);
 BOOL FlushFileBuffers(HANDLE file);
-BOOL SetEndOfFile(HANDLE file);
 DWORD SetFilePointer(HANDLE file, LONG distance, PLONG distanceHigh, DWORD method);
-BOOL SetFilePointerEx(HANDLE file, LARGE_INTEGER distance, PLARGE_INTEGER newPointer, DWORD method);
 DWORD GetFileSize(HANDLE file, LPDWORD high);
 BOOL GetFileSizeEx(HANDLE file, PLARGE_INTEGER size);
 BOOL GetFileTime(HANDLE file, LPFILETIME creation, LPFILETIME access, LPFILETIME write);
@@ -702,21 +660,15 @@ DWORD GetFileAttributesW(LPCWSTR name);
 DWORD GetFileAttributesA(LPCSTR name);
 BOOL GetFileAttributesExW(LPCWSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID info);
 BOOL GetFileAttributesExA(LPCSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID info);
-BOOL SetFileAttributesW(LPCWSTR name, DWORD attributes);
 BOOL DeleteFileW(LPCWSTR name);
 BOOL DeleteFileA(LPCSTR name);
 BOOL MoveFileW(LPCWSTR from, LPCWSTR to);
 BOOL MoveFileExW(LPCWSTR from, LPCWSTR to, DWORD flags);
-BOOL CopyFileW(LPCWSTR from, LPCWSTR to, BOOL failIfExists);
 BOOL CreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sa);
 BOOL CreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES sa);
-BOOL RemoveDirectoryW(LPCWSTR path);
 DWORD GetTempPathW(DWORD size, LPWSTR buffer);
-DWORD GetTempPathA(DWORD size, LPSTR buffer);
 DWORD GetCurrentDirectoryW(DWORD size, LPWSTR buffer);
-DWORD GetCurrentDirectoryA(DWORD size, LPSTR buffer);
 UINT GetWindowsDirectoryW(LPWSTR buffer, UINT size);
-DWORD GetFullPathNameW(LPCWSTR name, DWORD size, LPWSTR buffer, LPWSTR* filePart);
 HANDLE CreateFileMappingW(HANDLE file, LPSECURITY_ATTRIBUTES sa, DWORD protect, DWORD sizeHigh, DWORD sizeLow, LPCWSTR name);
 HANDLE OpenFileMappingW(DWORD access, BOOL inherit, LPCWSTR name);
 LPVOID MapViewOfFile(HANDLE mapping, DWORD access, DWORD offsetHigh, DWORD offsetLow, SIZE_T bytes);
@@ -725,18 +677,14 @@ BOOL UnmapViewOfFile(LPCVOID base);
 // shlwapi / shell32 / ole32
 BOOL PathIsRelativeW(LPCWSTR path);
 BOOL PathIsRelativeA(LPCSTR path);
-BOOL PathFileExistsW(LPCWSTR path);
 HRESULT SHGetKnownFolderPath(REFKNOWNFOLDERID rfid, DWORD flags, HANDLE token, PWSTR* path);
 HRESULT SHGetFolderPathW(HWND hwnd, int csidl, HANDLE token, DWORD flags, LPWSTR path);
 int SHCreateDirectoryExW(HWND hwnd, LPCWSTR path, const SECURITY_ATTRIBUTES* sa);
 void CoTaskMemFree(LPVOID pv);
-HRESULT CoInitializeEx(LPVOID reserved, DWORD coInit);
-HRESULT CoInitialize(LPVOID reserved);
-void CoUninitialize(void);
 HINSTANCE ShellExecuteW(HWND hwnd, LPCWSTR operation, LPCWSTR file, LPCWSTR parameters, LPCWSTR directory, INT showCmd);
 HINSTANCE ShellExecuteA(HWND hwnd, LPCSTR operation, LPCSTR file, LPCSTR parameters, LPCSTR directory, INT showCmd);
 
-// --- windows -------------------------------------------------------------------
+// --- windows ---
 BOOL IsWindow(HWND hwnd);
 BOOL IsWindowVisible(HWND hwnd);
 BOOL IsWindowUnicode(HWND hwnd);
@@ -747,109 +695,66 @@ BOOL GetClientRect(HWND hwnd, LPRECT rect);
 BOOL GetWindowRect(HWND hwnd, LPRECT rect);
 BOOL ClientToScreen(HWND hwnd, LPPOINT point);
 BOOL ScreenToClient(HWND hwnd, LPPOINT point);
-int MapWindowPoints(HWND from, HWND to, LPPOINT points, UINT count);
-BOOL AdjustWindowRectEx(LPRECT rect, DWORD style, BOOL menu, DWORD exStyle);
 HWND GetForegroundWindow(void);
-BOOL SetForegroundWindow(HWND hwnd);
 HWND GetActiveWindow(void);
-HWND GetFocus(void);
-HWND SetFocus(HWND hwnd);
 HWND GetAncestor(HWND hwnd, UINT flags);
-HWND GetParent(HWND hwnd);
-HWND GetWindow(HWND hwnd, UINT cmd);
-HWND GetDesktopWindow(void);
 DWORD GetWindowThreadProcessId(HWND hwnd, LPDWORD processId);
 LONG_PTR GetWindowLongPtrW(HWND hwnd, int index);
 LONG_PTR SetWindowLongPtrW(HWND hwnd, int index, LONG_PTR value);
-LONG GetWindowLongW(HWND hwnd, int index);
-LONG SetWindowLongW(HWND hwnd, int index, LONG value);
 BOOL SetWindowPos(HWND hwnd, HWND insertAfter, int x, int y, int cx, int cy, UINT flags);
-BOOL MoveWindow(HWND hwnd, int x, int y, int width, int height, BOOL repaint);
 BOOL ShowWindow(HWND hwnd, int cmd);
-BOOL UpdateWindow(HWND hwnd);
 BOOL InvalidateRect(HWND hwnd, const RECT* rect, BOOL erase);
 BOOL RedrawWindow(HWND hwnd, const RECT* rect, HRGN region, UINT flags);
-BOOL DestroyWindow(HWND hwnd);
-ATOM RegisterClassExW(const WNDCLASSEXW* wc);
-BOOL UnregisterClassW(LPCWSTR className, HINSTANCE instance);
-HWND CreateWindowExW(DWORD exStyle, LPCWSTR className, LPCWSTR windowName, DWORD style, int x, int y, int width, int height,
-                     HWND parent, HMENU menu, HINSTANCE instance, LPVOID param);
 LRESULT DefWindowProcW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT CallWindowProcW(WNDPROC proc, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 HANDLE GetPropW(HWND hwnd, LPCWSTR name);
-BOOL SetPropW(HWND hwnd, LPCWSTR name, HANDLE data);
-HANDLE RemovePropW(HWND hwnd, LPCWSTR name);
 BOOL EnumWindows(WNDENUMPROC proc, LPARAM lParam);
 int GetWindowTextA(HWND hwnd, LPSTR text, int maxCount);
-int GetWindowTextW(HWND hwnd, LPWSTR text, int maxCount);
-int GetWindowTextLengthW(HWND hwnd);
-BOOL SetWindowTextW(HWND hwnd, LPCWSTR text);
 int GetClassNameA(HWND hwnd, LPSTR className, int maxCount);
 int GetClassNameW(HWND hwnd, LPWSTR className, int maxCount);
 HWND WindowFromDC(HDC hdc);
-HWND WindowFromPoint(POINT point);
 HMONITOR MonitorFromWindow(HWND hwnd, DWORD flags);
 HMONITOR MonitorFromRect(LPCRECT rect, DWORD flags);
 HMONITOR MonitorFromPoint(POINT point, DWORD flags);
 BOOL GetMonitorInfoW(HMONITOR monitor, LPMONITORINFO info);
-BOOL GetMonitorInfoA(HMONITOR monitor, LPMONITORINFO info);
-BOOL EnumDisplayMonitors(HDC hdc, LPCRECT clip, MONITORENUMPROC proc, LPARAM data);
 int GetSystemMetrics(int index);
 int GetSystemMetricsForDpi(int index, UINT dpi);
-UINT GetDpiForWindow(HWND hwnd);
-UINT GetDpiForSystem(void);
 BOOL SetProcessDPIAware(void);
 BOOL SystemParametersInfoW(UINT action, UINT param, PVOID data, UINT winIni);
-BOOL SystemParametersInfoA(UINT action, UINT param, PVOID data, UINT winIni);
-int MessageBoxW(HWND hwnd, LPCWSTR text, LPCWSTR caption, UINT type);
-int MessageBoxA(HWND hwnd, LPCSTR text, LPCSTR caption, UINT type);
-BOOL FlashWindow(HWND hwnd, BOOL invert);
 
-// --- messages ------------------------------------------------------------------
+// --- messages ---
 BOOL PostMessageW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT SendMessageW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT SendMessageTimeoutW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT flags, UINT timeout, PDWORD_PTR result);
-BOOL SendNotifyMessageW(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 BOOL PostThreadMessageW(DWORD threadId, UINT msg, WPARAM wParam, LPARAM lParam);
 BOOL GetMessageW(LPMSG msg, HWND hwnd, UINT filterMin, UINT filterMax);
 BOOL PeekMessageW(LPMSG msg, HWND hwnd, UINT filterMin, UINT filterMax, UINT removeMsg);
-BOOL TranslateMessage(const MSG* msg);
 LRESULT DispatchMessageW(const MSG* msg);
-void PostQuitMessage(int exitCode);
 UINT RegisterWindowMessageA(LPCSTR name);
-UINT RegisterWindowMessageW(LPCWSTR name);
 UINT_PTR SetTimer(HWND hwnd, UINT_PTR id, UINT elapse, void* timerProc);
 BOOL KillTimer(HWND hwnd, UINT_PTR id);
 LPARAM GetMessageExtraInfo(void);
 LONG GetMessageTime(void);
-DWORD GetQueueStatus(UINT flags);
 
-// --- keyboard / mouse ----------------------------------------------------------
+// --- keyboard / mouse ---
 SHORT GetAsyncKeyState(int vk);
 SHORT GetKeyState(int vk);
 BOOL GetKeyboardState(PBYTE keyState);
-BOOL SetKeyboardState(PBYTE keyState);
 UINT MapVirtualKeyW(UINT code, UINT mapType);
 UINT MapVirtualKeyA(UINT code, UINT mapType);
 UINT MapVirtualKeyExW(UINT code, UINT mapType, HKL layout);
 int ToUnicodeEx(UINT vk, UINT scanCode, const BYTE* keyState, LPWSTR buffer, int bufferSize, UINT flags, HKL layout);
-int ToUnicode(UINT vk, UINT scanCode, const BYTE* keyState, LPWSTR buffer, int bufferSize, UINT flags);
 SHORT VkKeyScanA(CHAR ch);
-SHORT VkKeyScanW(WCHAR ch);
 SHORT VkKeyScanExW(WCHAR ch, HKL layout);
 int GetKeyNameTextA(LONG lParam, LPSTR buffer, int size);
-int GetKeyNameTextW(LONG lParam, LPWSTR buffer, int size);
 HKL GetKeyboardLayout(DWORD threadId);
 UINT SendInput(UINT count, LPINPUT inputs, int size);
-void keybd_event(BYTE vk, BYTE scan, DWORD flags, ULONG_PTR extraInfo);
 HHOOK SetWindowsHookExW(int idHook, HOOKPROC proc, HINSTANCE module, DWORD threadId);
 BOOL UnhookWindowsHookEx(HHOOK hook);
 LRESULT CallNextHookEx(HHOOK hook, int code, WPARAM wParam, LPARAM lParam);
 BOOL GetCursorPos(LPPOINT point);
 BOOL SetCursorPos(int x, int y);
-BOOL GetPhysicalCursorPos(LPPOINT point);
 BOOL ClipCursor(const RECT* rect);
-BOOL GetClipCursor(LPRECT rect);
 HCURSOR SetCursor(HCURSOR cursor);
 HCURSOR GetCursor(void);
 int ShowCursor(BOOL show);
@@ -858,87 +763,69 @@ HWND SetCapture(HWND hwnd);
 BOOL ReleaseCapture(void);
 HWND GetCapture(void);
 BOOL TrackMouseEvent(LPTRACKMOUSEEVENT eventTrack);
-UINT GetDoubleClickTime(void);
-UINT GetCaretBlinkTime(void);
-BOOL SwapMouseButton(BOOL swap);
 UINT GetRawInputData(HRAWINPUT rawInput, UINT command, LPVOID data, PUINT size, UINT headerSize);
 
-// --- cursors / icons / gdi -------------------------------------------------------
+// --- cursors / icons / gdi ---
 HCURSOR LoadCursorW(HINSTANCE instance, LPCWSTR name);
-HCURSOR LoadCursorA(HINSTANCE instance, LPCSTR name);
 HANDLE LoadImageW(HINSTANCE instance, LPCWSTR name, UINT type, int cx, int cy, UINT flags);
 HANDLE CopyImage(HANDLE image, UINT type, int cx, int cy, UINT flags);
 BOOL DestroyCursor(HCURSOR cursor);
 BOOL DestroyIcon(HICON icon);
-HICON CreateIconIndirect(PICONINFO info);
 BOOL GetIconInfo(HICON icon, PICONINFO info);
 BOOL GetIconInfoExW(HICON icon, PICONINFOEXW info);
 HDC GetDC(HWND hwnd);
-HDC GetWindowDC(HWND hwnd);
 int ReleaseDC(HWND hwnd, HDC hdc);
 HDC CreateCompatibleDC(HDC hdc);
 BOOL DeleteDC(HDC hdc);
 HBITMAP CreateCompatibleBitmap(HDC hdc, int width, int height);
-HBITMAP CreateDIBSection(HDC hdc, const BITMAPINFO* bmi, UINT usage, void** bits, HANDLE section, DWORD offset);
-HBITMAP CreateBitmap(int width, int height, UINT planes, UINT bitCount, const void* bits);
 HGDIOBJ SelectObject(HDC hdc, HGDIOBJ obj);
 BOOL DeleteObject(HGDIOBJ obj);
 int GetObjectW(HANDLE obj, int size, LPVOID out);
-int GetObjectA(HANDLE obj, int size, LPVOID out);
 int GetDIBits(HDC hdc, HBITMAP bitmap, UINT start, UINT lines, LPVOID bits, LPBITMAPINFO bmi, UINT usage);
 LONG GetBitmapBits(HBITMAP bitmap, LONG count, LPVOID bits);
 BOOL BitBlt(HDC dst, int x, int y, int cx, int cy, HDC src, int x1, int y1, DWORD rop);
 BOOL PrintWindow(HWND hwnd, HDC hdc, UINT flags);
 int FillRect(HDC hdc, const RECT* rect, HBRUSH brush);
 HGDIOBJ GetStockObject(int index);
-HBRUSH CreateSolidBrush(COLORREF color);
 int SetROP2(HDC hdc, int mode);
-BOOL DrawIconEx(HDC hdc, int x, int y, HICON icon, int cx, int cy, UINT step, HBRUSH brush, UINT flags);
 int GetDeviceCaps(HDC hdc, int index);
 HRGN CreateRectRgn(int x1, int y1, int x2, int y2);
 #define DI_NORMAL 0x0003
 #define DI_MASK 0x0001
 #define DI_IMAGE 0x0002
 
-// --- clipboard -------------------------------------------------------------------
+// --- clipboard ---
 BOOL OpenClipboard(HWND owner);
 BOOL CloseClipboard(void);
 BOOL EmptyClipboard(void);
 HANDLE SetClipboardData(UINT format, HANDLE mem);
 HANDLE GetClipboardData(UINT format);
-BOOL IsClipboardFormatAvailable(UINT format);
 
-// --- common dialogs ----------------------------------------------------------------
+// --- common dialogs ---
 BOOL GetOpenFileNameW(LPOPENFILENAMEW ofn);
-BOOL GetSaveFileNameW(LPOPENFILENAMEW ofn);
 DWORD CommDlgExtendedError(void);
 
-// --- dwm -------------------------------------------------------------------------
+// --- dwm ---
 HRESULT DwmGetWindowAttribute(HWND hwnd, DWORD attribute, PVOID value, DWORD size);
 HRESULT DwmEnableBlurBehindWindow(HWND hwnd, const DWM_BLURBEHIND* blurBehind);
 HRESULT DwmIsCompositionEnabled(BOOL* enabled);
 HRESULT DwmGetColorizationColor(DWORD* color, BOOL* opaqueBlend);
 
-// --- dbghelp -----------------------------------------------------------------------
+// --- dbghelp ---
 DWORD SymGetOptions(void);
 DWORD SymSetOptions(DWORD options);
 BOOL SymInitialize(HANDLE process, PCSTR searchPath, BOOL invadeProcess);
-BOOL SymCleanup(HANDLE process);
 BOOL SymFromAddr(HANDLE process, DWORD64 address, PDWORD64 displacement, PSYMBOL_INFO symbol);
 BOOL SymGetLineFromAddr64(HANDLE process, DWORD64 address, PDWORD displacement, PIMAGEHLP_LINE64 line);
 DWORD64 SymLoadModuleEx(HANDLE process, HANDLE file, PCSTR imageName, PCSTR moduleName, DWORD64 baseOfDll, DWORD dllSize,
                         PVOID data, DWORD flags);
-BOOL SymRefreshModuleList(HANDLE process);
-BOOL SymSetSearchPath(HANDLE process, PCSTR searchPath);
 
-// --- winhttp -------------------------------------------------------------------------
+// --- winhttp ---
 HINTERNET WinHttpOpen(LPCWSTR agent, DWORD accessType, LPCWSTR proxy, LPCWSTR proxyBypass, DWORD flags);
 BOOL WinHttpSetTimeouts(HINTERNET handle, int resolveTimeout, int connectTimeout, int sendTimeout, int receiveTimeout);
-BOOL WinHttpSetOption(HINTERNET handle, DWORD option, LPVOID buffer, DWORD length);
 HINTERNET WinHttpConnect(HINTERNET session, LPCWSTR server, INTERNET_PORT port, DWORD reserved);
 HINTERNET WinHttpOpenRequest(HINTERNET connect, LPCWSTR verb, LPCWSTR objectName, LPCWSTR version, LPCWSTR referrer,
                              LPCWSTR* acceptTypes, DWORD flags);
-BOOL WinHttpAddRequestHeaders(HINTERNET request, LPCWSTR headers, DWORD headersLength, DWORD modifiers);
 BOOL WinHttpSendRequest(HINTERNET request, LPCWSTR headers, DWORD headersLength, LPVOID optional, DWORD optionalLength,
                         DWORD totalLength, DWORD_PTR context);
 BOOL WinHttpReceiveResponse(HINTERNET request, LPVOID reserved);
@@ -948,16 +835,14 @@ BOOL WinHttpReadData(HINTERNET request, LPVOID buffer, DWORD toRead, LPDWORD rea
 BOOL WinHttpCloseHandle(HINTERNET handle);
 BOOL WinHttpCrackUrl(LPCWSTR url, DWORD urlLength, DWORD flags, LPURL_COMPONENTS components);
 
-// --- wgl ---------------------------------------------------------------------------------
+// --- wgl ---
 // wglGetCurrentContext returns the current CGL context. Toolscreen renders in its
 // own core-profile context, so this is that context during the swap hook.
 HGLRC wglGetCurrentContext(void);
-HDC wglGetCurrentDC(void);
 FARPROC wglGetProcAddress(LPCSTR name);
-BOOL wglMakeCurrent(HDC hdc, HGLRC context);
 BOOL SwapBuffers(HDC hdc);
 
-// --- registry ---------------------------------------------------------------------------
+// --- registry ---
 // Only the OBS Virtual Camera's class registration is answered (see kernel32.cpp);
 // every other key reports "not found".
 #define HKEY_CLASSES_ROOT (reinterpret_cast<HKEY>(static_cast<uintptr_t>(0x80000000u)))
@@ -965,39 +850,22 @@ BOOL SwapBuffers(HDC hdc);
 LONG RegOpenKeyExA(HKEY key, LPCSTR subKey, DWORD options, DWORD desired, HKEY* result);
 LONG RegCloseKey(HKEY key);
 
-// --- MSVC CRT ---------------------------------------------------------------------------
+// --- MSVC CRT ---
 int sprintf_s(char* buffer, size_t size, const char* format, ...);
 int swprintf_s(wchar_t* buffer, size_t size, const wchar_t* format, ...);
-int vsprintf_s(char* buffer, size_t size, const char* format, va_list args);
-errno_t strcpy_s(char* dest, size_t size, const char* src);
 errno_t strncpy_s(char* dest, size_t size, const char* src, size_t count);
-errno_t strcat_s(char* dest, size_t size, const char* src);
-errno_t wcscpy_s(wchar_t* dest, size_t size, const wchar_t* src);
 errno_t wcsncpy_s(wchar_t* dest, size_t size, const wchar_t* src, size_t count);
-errno_t wcscat_s(wchar_t* dest, size_t size, const wchar_t* src);
-size_t strnlen_s(const char* str, size_t size);
-size_t wcsnlen_s(const wchar_t* str, size_t size);
 errno_t localtime_s(struct tm* result, const time_t* time);
-errno_t gmtime_s(struct tm* result, const time_t* time);
 errno_t getenv_s(size_t* required, char* buffer, size_t size, const char* name);
 errno_t _wgetenv_s(size_t* required, wchar_t* buffer, size_t size, const wchar_t* name);
-errno_t _dupenv_s(char** buffer, size_t* size, const char* name);
 errno_t fopen_s(FILE** file, const char* name, const char* mode);
 errno_t _wfopen_s(FILE** file, const wchar_t* name, const wchar_t* mode);
 FILE* _wfopen(const wchar_t* name, const wchar_t* mode);
-int _wremove(const wchar_t* name);
-int _wrename(const wchar_t* from, const wchar_t* to);
 
 } // extern "C"
 
 // Narrow variants used by the overloads below.
 extern "C" {
-BOOL MoveFileExA(LPCSTR from, LPCSTR to, DWORD flags);
-BOOL CopyFileA(LPCSTR from, LPCSTR to, BOOL failIfExists);
-BOOL RemoveDirectoryA(LPCSTR path);
-BOOL PathFileExistsA(LPCSTR path);
-int SHCreateDirectoryExA(HWND hwnd, LPCSTR path, const SECURITY_ATTRIBUTES* sa);
-HANDLE LoadImageA(HINSTANCE instance, LPCSTR name, UINT type, int cx, int cy, UINT flags);
 }
 
 // std::filesystem::path::c_str() is a narrow (UTF-8) string on macOS, so the
@@ -1018,7 +886,6 @@ inline BOOL PathFileExistsW(const char* path) { return PathFileExistsA(path); }
 inline BOOL PathIsRelativeW(const char* path) { return PathIsRelativeA(path); }
 inline int SHCreateDirectoryExW(HWND hwnd, const char* path, const SECURITY_ATTRIBUTES* sa) { return SHCreateDirectoryExA(hwnd, path, sa); }
 inline HANDLE LoadImageW(HINSTANCE instance, const char* name, UINT type, int cx, int cy, UINT flags) {
-    return LoadImageA(instance, name, type, cx, cy, flags);
 }
 
 // Templated array overloads provided by the MSVC CRT.
@@ -1047,64 +914,17 @@ template <size_t N> inline errno_t strcat_s(char (&dest)[N], const char* src) { 
 // ANSI/Unicode name mapping (UNICODE is defined for the build).
 #define GetModuleHandle GetModuleHandleW
 #define GetModuleHandleEx GetModuleHandleExW
-#define GetModuleFileName GetModuleFileNameW
 #define LoadLibrary LoadLibraryW
-#define LoadLibraryEx LoadLibraryExW
-#define CreateFile CreateFileW
-#define DeleteFile DeleteFileW
-#define MoveFile MoveFileW
-#define MoveFileEx MoveFileExW
-#define CopyFile CopyFileW
-#define CreateDirectory CreateDirectoryW
-#define GetFileAttributes GetFileAttributesW
-#define GetFileAttributesEx GetFileAttributesExW
-#define GetTempPath GetTempPathW
-#define GetCurrentDirectory GetCurrentDirectoryW
-#define GetEnvironmentVariable GetEnvironmentVariableW
-#define CreateEvent CreateEventW
-#define CreateWaitableTimer CreateWaitableTimerW
-#define FindResource FindResourceW
-#define FormatMessage FormatMessageA
-#define OutputDebugString OutputDebugStringW
 #define GetWindowLongPtr GetWindowLongPtrW
 #define SetWindowLongPtr SetWindowLongPtrW
-#define GetWindowLong GetWindowLongW
-#define SetWindowLong SetWindowLongW
 #define DefWindowProc DefWindowProcW
 #define CallWindowProc CallWindowProcW
 #define PostMessage PostMessageW
 #define SendMessage SendMessageW
-#define SendMessageTimeout SendMessageTimeoutW
-#define PostThreadMessage PostThreadMessageW
-#define GetMessage GetMessageW
 #define PeekMessage PeekMessageW
-#define DispatchMessage DispatchMessageW
-#define RegisterWindowMessage RegisterWindowMessageW
-#define RegisterClassEx RegisterClassExW
-#define UnregisterClass UnregisterClassW
-#define CreateWindowEx CreateWindowExW
-#define GetWindowText GetWindowTextW
-#define GetClassName GetClassNameW
-#define GetProp GetPropW
-#define SetProp SetPropW
-#define RemoveProp RemovePropW
 #define GetMonitorInfo GetMonitorInfoW
 #define SystemParametersInfo SystemParametersInfoW
-#define MessageBox MessageBoxW
 #define MapVirtualKey MapVirtualKeyW
-#define MapVirtualKeyEx MapVirtualKeyExW
-#define VkKeyScan VkKeyScanW
-#define VkKeyScanEx VkKeyScanExW
-#define GetKeyNameText GetKeyNameTextW
-#define SetWindowsHookEx SetWindowsHookExW
 #define LoadCursor LoadCursorW
-#define LoadImage LoadImageW
-#define GetIconInfoEx GetIconInfoExW
 #define GetObject GetObjectW
-#define GetOpenFileName GetOpenFileNameW
-#define GetSaveFileName GetSaveFileNameW
-#define ShellExecute ShellExecuteW
-#define SHGetFolderPath SHGetFolderPathW
-#define PathIsRelative PathIsRelativeW
-#define PathFileExists PathFileExistsW
 #define WinHttpCrackUrlW WinHttpCrackUrl

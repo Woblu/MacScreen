@@ -5,8 +5,8 @@
 // Apple's libc++ lacks a few C++20 library features the shared sources use
 // (MSVC's standard library has them): std::atomic<std::shared_ptr<T>>,
 // std::atomic of non-trivially-copyable std::pair, and std::jthread /
-// std::stop_token / std::stop_callback. Minimal implementations follow; each is
-// only provided when the standard library does not have it.
+// std::stop_token / std::stop_callback. Minimal implementations follow; the
+// shared_ptr and jthread ones only when the standard library lacks them.
 
 #ifdef __cplusplus
 

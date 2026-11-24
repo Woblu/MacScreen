@@ -97,12 +97,25 @@ bool EnsureGameSide(SharedSurface& s, int width, int height) {
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, s.gameTexture);
     const CGLError err = CGLTexImageIOSurface2D(g_gameContext, GL_TEXTURE_RECTANGLE_ARB, GL_RGBA8, width, height, GL_BGRA,
                                                 GL_UNSIGNED_INT_8_8_8_8_REV, s.surface, 0);
-    if (err != kCGLNoError) return false;
+    if (err == kCGLNoError) {
+        if (s.gameFramebuffer == 0) glGenFramebuffersEXT(1, &s.gameFramebuffer);
+        glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT, s.gameFramebuffer);
+        glFramebufferTexture2DEXT(GL_DRAW_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_RECTANGLE_ARB, s.gameTexture, 0);
+        if (glCheckFramebufferStatusEXT(GL_DRAW_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT) return true;
+    }
+    // Retried on the next frame.
+    s.width = 0;
+    s.height = 0;
+    return false;
+}
 
-    if (s.gameFramebuffer == 0) glGenFramebuffersEXT(1, &s.gameFramebuffer);
-    glBindFramebufferEXT(GL_DRAW_FRAMEBUFFER_EXT, s.gameFramebuffer);
-    glFramebufferTexture2DEXT(GL_DRAW_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_RECTANGLE_ARB, s.gameTexture, 0);
-    return glCheckFramebufferStatusEXT(GL_DRAW_FRAMEBUFFER_EXT) == GL_FRAMEBUFFER_COMPLETE_EXT;
+// For a new game context: its objects belonged to the previous one. Toolscreen's
+// side (core) is kept and bound to the new surface.
+void ResetGameSide(SharedSurface& s) {
+    if (s.surface) CFRelease(s.surface);
+    const MacGlBridgeCore::SurfaceTarget core = s.core;
+    s = SharedSurface{};
+    s.core = core;
 }
 
 bool TextureSize(GLuint texture, int& width, int& height) {
@@ -168,6 +181,8 @@ namespace MacGlBridge {
 
 bool IsToolscreenContextCurrent() { return t_toolscreenCurrent; }
 
+bool IsGameContextCurrent() { return g_gameContext && CGLGetCurrentContext() == g_gameContext; }
+
 unsigned ScreenFramebuffer() { return g_screenFramebuffer.load(std::memory_order_acquire); }
 
 void* ToolscreenContext() { return g_toolscreenContext; }
@@ -187,6 +202,7 @@ ScopedGameContext::~ScopedGameContext() {
     t_toolscreenCurrent = true;
 }
 
+// Creates Toolscreen's context next to the game's and initializes GLEW in it.
 bool EnsureToolscreenContext(void* gameCglContext) {
     std::lock_guard<std::mutex> lock(g_contextMutex);
     if (g_toolscreenContext) return true;
@@ -217,8 +233,8 @@ bool BeginToolscreenFrame(int framebufferWidth, int framebufferHeight, unsigned 
     if (g_gameContext != game) {
         // A new game context (e.g. after a renderer change) owns none of our objects.
         g_gameContext = game;
-        g_screen = SharedSurface{};
-        g_gameCopy = SharedSurface{};
+        ResetGameSide(g_screen);
+        ResetGameSide(g_gameCopy);
         g_gameReadFramebuffer = 0;
     }
 

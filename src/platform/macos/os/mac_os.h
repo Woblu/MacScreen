@@ -29,7 +29,7 @@ void SetCoordinateScale(double scale);
 // Re-reads the keyboard layout. Main thread only; other threads use the cache.
 void RefreshKeyboardLayout();
 
-// --- main thread -------------------------------------------------------------
+// --- main thread ---
 // Functions below that touch AppKit run on the main thread (synchronously when
 // called elsewhere). Callers off the main thread should prefer cached state.
 bool IsMainThread();
@@ -37,7 +37,7 @@ bool IsMainThread();
 void RunOnMainThreadSync(const std::function<void()>& fn);
 void RunOnMainThreadAsync(std::function<void()> fn);
 
-// --- displays ------------------------------------------------------------------
+// --- displays ---
 struct Display {
     PixelRect frame;
     PixelRect workArea;
@@ -49,7 +49,7 @@ struct Display {
 std::vector<Display> Displays();
 double PrimaryDisplayScale();
 
-// --- windows (NSWindow* passed as void*) -------------------------------------------
+// --- windows (NSWindow* passed as void*) ---
 bool WindowContentRect(void* nsWindow, PixelRect& out);
 bool WindowFrameRect(void* nsWindow, PixelRect& out);
 // Pixels per point of the window's OpenGL surface: 1 when its view does not use
@@ -60,7 +60,6 @@ bool WindowIsVisible(void* nsWindow);
 bool WindowIsMiniaturized(void* nsWindow);
 bool WindowIsZoomed(void* nsWindow);
 bool WindowIsFullscreen(void* nsWindow);
-bool ApplicationIsActive();
 void WindowActivate(void* nsWindow);
 uint32_t WindowNumber(void* nsWindow);
 std::string WindowTitle(void* nsWindow);
@@ -72,7 +71,7 @@ bool WindowIsBorderless(void* nsWindow);
 void WindowMiniaturize(void* nsWindow);
 void WindowRestore(void* nsWindow);
 
-// --- other applications' windows ----------------------------------------------------
+// --- other applications' windows ---
 struct ForeignWindow {
     uint32_t id = 0;
     int pid = 0;
@@ -86,7 +85,7 @@ struct ForeignWindow {
 std::vector<ForeignWindow> ListWindows(bool onScreenOnly);
 bool WindowInfo(uint32_t windowId, ForeignWindow& out);
 
-// --- cursor ------------------------------------------------------------------------
+// --- cursor ---
 bool CursorPosition(int& x, int& y);
 void WarpCursor(int x, int y);
 void SetCursorAssociated(bool associated);
@@ -101,14 +100,13 @@ void UnhideCursor();
 bool CursorImage(void* cursor, std::vector<uint8_t>& rgba, int& width, int& height, int& hotX, int& hotY);
 int SystemCursorSizePixels();
 
-// --- keyboard ------------------------------------------------------------------------
+// --- keyboard ---
 // Characters produced by `keyCode` in the current layout (no dead-key state).
 std::u16string TranslateKey(uint16_t keyCode, bool shift, bool option, bool capsLock, bool control);
 // Identifier that changes whenever the input source changes.
 uint64_t KeyboardLayoutId();
 // Primary language of the current input source, e.g. "en", "de".
 std::string KeyboardLayoutLanguage();
-std::string KeyboardLayoutName();
 // Physical keyboard type: 0 = ANSI, 1 = ISO, 2 = JIS.
 int PhysicalKeyboardType();
 bool CapsLockOn();
@@ -116,7 +114,7 @@ bool CapsLockOn();
 int KeyRepeatInitialDelayMs();
 int KeyRepeatIntervalMs();
 
-// --- clipboard / shell / dialogs ----------------------------------------------------------
+// --- clipboard / shell / dialogs ---
 bool SetClipboardText(const std::string& utf8);
 bool GetClipboardText(std::string& utf8);
 bool OpenUrl(const std::string& urlOrPath);
@@ -128,7 +126,7 @@ bool ChooseSaveFile(const std::string& title, const std::string& initialDirector
 // Returns the index of the pressed button.
 int ShowAlert(const std::string& title, const std::string& text, const std::vector<std::string>& buttons, bool critical);
 
-// --- paths ----------------------------------------------------------------------------
+// --- paths ---
 std::string HomeDirectory();
 std::string TemporaryDirectory();
 std::string DownloadsDirectory();
@@ -138,14 +136,14 @@ std::string PicturesDirectory();
 std::string ApplicationSupportDirectory();
 std::vector<std::string> FontDirectories();
 
-// --- processes ------------------------------------------------------------------------
+// --- processes ---
 // Process start time as microseconds since the Unix epoch.
 bool ProcessStartTimeUs(int pid, uint64_t& outUs);
 bool ProcessAlive(int pid);
 std::string ProcessPath(int pid);
 std::vector<std::string> CommandLineArguments();
 
-// --- HTTP -----------------------------------------------------------------------------
+// --- HTTP ---
 struct HttpResponse {
     int status = 0;
     std::vector<std::pair<std::string, std::string>> headers;
