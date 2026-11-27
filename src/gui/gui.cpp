@@ -3086,7 +3086,11 @@ void RenderSettingsGUI() {
         ImGui::SetNextWindowSize(ImVec2(850.0f * windowScaleFactor, 650.0f * windowScaleFactor), ImGuiCond_Always);
     }
 
+#if defined(__APPLE__)
+    std::string windowTitle = std::string("MacScreen v") + MACSCREEN_VERSION_STRING + " (Toolscreen by jojoe77777)";
+#else
     std::string windowTitle = "Toolscreen v" + GetToolscreenVersionString() + " by jojoe77777";
+#endif
 
     const float titleBarExtraPad = 6.0f * scaleFactor;
     const ImVec2 baseFramePadding = ImGui::GetStyle().FramePadding;

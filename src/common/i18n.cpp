@@ -138,6 +138,9 @@ bool LoadTranslation(const std::string& lang) {
                 loadedTranslationJson[key] = std::move(value);
             }
         }
+#if defined(__APPLE__)
+        loadedTranslationJson["label.toolscreen"] = "MacScreen";
+#endif
 
         g_translationJson = std::move(loadedTranslationJson);
         g_translationCache.clear();

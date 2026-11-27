@@ -4,8 +4,6 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Container;
-import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -39,28 +37,39 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
+
+import static com.toolscreen.macos.Updater.BG;
+import static com.toolscreen.macos.Updater.DYLIB_NAME;
+import static com.toolscreen.macos.Updater.FG;
+import static com.toolscreen.macos.Updater.JAR_NAME;
+import static com.toolscreen.macos.Updater.LOGGER_NAME;
+import static com.toolscreen.macos.Updater.PRELAUNCH_ARG;
+import static com.toolscreen.macos.Updater.PROJECT_NAME;
+import static com.toolscreen.macos.Updater.applyDarkTheme;
+import static com.toolscreen.macos.Updater.dllDirectory;
+import static com.toolscreen.macos.Updater.escape;
+import static com.toolscreen.macos.Updater.readVersion;
+import static com.toolscreen.macos.Updater.replaceFile;
+import static com.toolscreen.macos.Updater.stableJar;
+import static com.toolscreen.macos.Updater.styledButton;
 
 /**
- * Toolscreen installer for macOS (Prism Launcher / MultiMC).
+ * MacScreen installer (Prism Launcher / MultiMC).
  *
  * Copies Toolscreen.dylib and liblogger.dylib to ~/.config/toolscreen/dlls and
  * sets the instance's wrapper command so the game starts with both libraries
  * injected through DYLD_INSERT_LIBRARIES, LibLogger first: the macOS
- * counterpart of the Windows DLL injector. Run it again to uninstall.
+ * counterpart of the Windows DLL injector. It also copies this jar to
+ * ~/.config/toolscreen/MacScreen.jar and makes it the pre-launch command,
+ * which checks for updates (see Updater). The dialog shown after installing
+ * can uninstall.
  */
 public final class Installer {
-    private static final String PROJECT_NAME = "Toolscreen";
     private static final String ENV_COMMAND = "/usr/bin/env";
     private static final String INSERT_VARIABLE = "DYLD_INSERT_LIBRARIES=";
     // The first macOS build (1.5.2-macos.1) loaded Toolscreen as a JVM agent;
     // installing or uninstalling removes that.
     private static final String LEGACY_AGENT_PREFIX = "-agentpath:";
-    private static final String DYLIB_NAME = "Toolscreen.dylib";
-    private static final String LOGGER_NAME = "liblogger.dylib";
-
-    private static final Color BG = new Color(43, 43, 43);
-    private static final Color FG = new Color(224, 224, 224);
 
     private Installer() {}
 
@@ -87,6 +96,9 @@ public final class Installer {
 
             File dllDir = dllDirectory();
             extractPayload(dllDir);
+            try (InputStream in = Files.newInputStream(ownJar().toPath())) {
+                replaceFile(in, stableJar());
+            }
 
             InstanceSettings settings = new InstanceSettings(Files.readAllLines(instanceCfg.toPath(), StandardCharsets.UTF_8));
             undoLegacyAgentInstall(instanceDir, settings);
@@ -103,6 +115,7 @@ public final class Installer {
             }
             settings.setOverrideCommands(true);
             settings.setToolscreenWrapper(injectionCommand(dllDir));
+            settings.setMacScreenPreLaunch(preLaunchCommand());
             writeLines(instanceCfg, settings.lines());
         } catch (Exception e) {
             showError("Installation failed: " + e.getMessage());
@@ -119,6 +132,7 @@ public final class Installer {
             InstanceSettings settings = new InstanceSettings(Files.readAllLines(instanceCfg.toPath(), StandardCharsets.UTF_8));
             undoLegacyAgentInstall(instanceDir, settings);
             settings.removeToolscreenWrapper();
+            settings.removeMacScreenPreLaunch();
             Properties state = loadRestoreState(instanceDir);
             if (state != null && state.getProperty("overrideCommands") != null) {
                 boolean override = Boolean.parseBoolean(state.getProperty("overrideCommands"));
@@ -140,17 +154,10 @@ public final class Installer {
     }
 
     private static void extractPayload(File dllDir) throws IOException {
-        Files.createDirectories(dllDir.toPath());
         for (String name : new String[] { DYLIB_NAME, LOGGER_NAME }) {
             try (InputStream in = Installer.class.getResourceAsStream("/payload/" + name)) {
                 if (in == null) throw new IOException("The installer is missing " + name + ".");
-                Path temp = Files.createTempFile(dllDir.toPath(), name, ".tmp");
-                try {
-                    Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
-                    Files.move(temp, new File(dllDir, name).toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-                } finally {
-                    Files.deleteIfExists(temp);
-                }
+                replaceFile(in, new File(dllDir, name));
             }
         }
     }
@@ -166,15 +173,16 @@ public final class Installer {
         }
     }
 
-    private static File dllDirectory() {
-        return new File(new File(new File(System.getProperty("user.home"), ".config"), "toolscreen"), "dlls");
-    }
-
     /** "/usr/bin/env DYLD_INSERT_LIBRARIES=<liblogger>:<Toolscreen>". */
     private static String injectionCommand(File dllDir) {
         String variable = INSERT_VARIABLE + new File(dllDir, LOGGER_NAME).getAbsolutePath() + ":"
             + new File(dllDir, DYLIB_NAME).getAbsolutePath();
         return ENV_COMMAND + " " + (variable.indexOf(' ') >= 0 ? "\"" + variable + "\"" : variable);
+    }
+
+    /** "\"$INST_JAVA\" -jar \"<~/.config/toolscreen/MacScreen.jar>\" --prelaunch"; the launcher fills in $INST_JAVA. */
+    private static String preLaunchCommand() {
+        return "\"$INST_JAVA\" -jar \"" + stableJar().getAbsolutePath() + "\" " + PRELAUNCH_ARG;
     }
 
     /** Removes the JVM agent the first macOS build added and restores the Java arguments it changed. */
@@ -189,13 +197,17 @@ public final class Installer {
         }
     }
 
-    private static File instanceDirectory() {
+    private static File ownJar() {
         try {
-            File jar = new File(Installer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            return jar.getParentFile();
+            return new File(Installer.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         } catch (URISyntaxException | SecurityException e) {
             return null;
         }
+    }
+
+    private static File instanceDirectory() {
+        File jar = ownJar();
+        return jar == null ? null : jar.getParentFile();
     }
 
     /** The launcher's global settings (two folders above the instance); empty if not found. */
@@ -305,34 +317,6 @@ public final class Installer {
         return command.substring(0, command.toLowerCase().indexOf(".app/") + 4);
     }
 
-    private static String readVersion() {
-        try (InputStream in = Installer.class.getResourceAsStream("/payload/version.txt")) {
-            if (in == null) return "";
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) {
-            return "";
-        }
-    }
-
-    private static void applyDarkTheme() {
-        Color btnBg = new Color(60, 60, 60);
-        Font baseFont = new Font("SansSerif", Font.PLAIN, 13);
-        Font btnFont = new Font("SansSerif", Font.PLAIN, 12);
-        UIManager.put("OptionPane.background", BG);
-        UIManager.put("OptionPane.messageForeground", FG);
-        UIManager.put("OptionPane.messageFont", baseFont);
-        UIManager.put("Panel.background", BG);
-        UIManager.put("Panel.foreground", FG);
-        UIManager.put("Label.background", BG);
-        UIManager.put("Label.foreground", FG);
-        UIManager.put("Label.font", baseFont);
-        UIManager.put("Button.background", btnBg);
-        UIManager.put("Button.foreground", FG);
-        UIManager.put("Button.font", btnFont);
-        UIManager.put("Button.border", BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(80, 80, 80)), BorderFactory.createEmptyBorder(4, 12, 4, 12)));
-    }
-
     private static void showInstalled(String version, File instanceDir, Supplier<String> uninstaller) {
         JPanel panel = new JPanel();
         panel.setOpaque(true);
@@ -428,43 +412,6 @@ public final class Installer {
         JOptionPane.showMessageDialog(null, text, PROJECT_NAME, JOptionPane.ERROR_MESSAGE);
     }
 
-    private static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-    }
-
-    private static JButton styledButton(String text) {
-        JButton btn = new JButton(text) {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Container parent = getParent();
-                g2.setColor(parent != null ? parent.getBackground() : BG);
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                Color bg = getModel().isPressed() ? new Color(40, 40, 40)
-                    : getModel().isRollover() ? new Color(80, 80, 80) : new Color(60, 60, 60);
-                int w = Math.max(0, getWidth() - 2);
-                int h = Math.max(0, getHeight() - 2);
-                g2.setColor(bg);
-                g2.fillRoundRect(1, 1, w, h, 10, 10);
-                g2.setColor(new Color(100, 100, 100));
-                if (w > 1 && h > 1) g2.drawRoundRect(1, 1, w - 1, h - 1, 10, 10);
-                super.paintComponent(g2);
-                g2.dispose();
-            }
-        };
-        btn.setFont(new Font("SansSerif", Font.BOLD, 12));
-        btn.setForeground(FG);
-        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.setContentAreaFilled(false);
-        btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
-        btn.setOpaque(false);
-        btn.setRolloverEnabled(true);
-        btn.setBorder(BorderFactory.createEmptyBorder(8, 20, 8, 20));
-        return btn;
-    }
-
     private static Icon successIcon() {
         return new Icon() {
             @Override
@@ -507,6 +454,9 @@ public final class Installer {
             + Pattern.quote(DYLIB_NAME) + ")");
         private static final Pattern LEGACY_AGENT = Pattern.compile("\\s*(\"" + Pattern.quote(LEGACY_AGENT_PREFIX) + "[^\"]*/"
             + Pattern.quote(DYLIB_NAME) + "\"|" + Pattern.quote(LEGACY_AGENT_PREFIX) + "\\S*/" + Pattern.quote(DYLIB_NAME) + ")");
+        // What preLaunchCommand writes, followed by the player's own pre-launch command.
+        private static final Pattern MACSCREEN_PRELAUNCH = Pattern.compile("^\\s*\"\\$INST_JAVA\" -jar \"[^\"]*/"
+            + Pattern.quote(JAR_NAME) + "\" " + Pattern.quote(PRELAUNCH_ARG) + "(\\s+|$)");
 
         private final List<String> lines;
 
@@ -574,6 +524,17 @@ public final class Installer {
 
         void removeToolscreenWrapper() {
             if (hasToolscreenWrapper()) setWrapperCommand(TOOLSCREEN_WRAPPER.matcher(wrapperCommand()).replaceAll("").trim());
+        }
+
+        /** Runs MacScreen's pre-launch step first; it runs the player's own command itself. */
+        void setMacScreenPreLaunch(String command) {
+            String rest = MACSCREEN_PRELAUNCH.matcher(preLaunchCommand()).replaceFirst("").trim();
+            setPreLaunchCommand(rest.isEmpty() ? command : command + " " + rest);
+        }
+
+        void removeMacScreenPreLaunch() {
+            String command = preLaunchCommand();
+            if (MACSCREEN_PRELAUNCH.matcher(command).find()) setPreLaunchCommand(MACSCREEN_PRELAUNCH.matcher(command).replaceFirst("").trim());
         }
 
         /** Returns true if a JVM agent from the first macOS build was removed. */

@@ -121,6 +121,12 @@ void MacSwapBuffersDetour(void* window) {
     }
 }
 
+// RetiNO turns off GLFW_COCOA_RETINA_FRAMEBUFFER right before the window is created.
+void MacWindowHintDetour(int hint, int value) {
+    if (hint == 0x00023001) Log("[macOS] GLFW_COCOA_RETINA_FRAMEBUFFER set to " + std::to_string(value));
+    hkglfwWindowHint(hint, value);
+}
+
 } // namespace
 
 void MacInstallHooks() {
@@ -150,7 +156,7 @@ void MacInstallHooks() {
     MacGlfwBridge::SetUpstreamSizeCallbackSetters(&hkglfwSetWindowSizeCallback, &hkglfwSetFramebufferSizeCallback);
 
     MacSymbolHooks::RegisterDlsymHook("glfwCreateWindow", reinterpret_cast<void*>(&hkglfwCreateWindow), MacGlfwBridge::RealCreateWindowSlot());
-    MacSymbolHooks::RegisterDlsymHook("glfwWindowHint", reinterpret_cast<void*>(&hkglfwWindowHint), reinterpret_cast<void**>(&oglfwWindowHint));
+    MacSymbolHooks::RegisterDlsymHook("glfwWindowHint", reinterpret_cast<void*>(&MacWindowHintDetour), reinterpret_cast<void**>(&oglfwWindowHint));
     MacSymbolHooks::RegisterDlsymHook("glfwDestroyWindow", reinterpret_cast<void*>(&hkglfwDestroyWindow),
                                       MacGlfwBridge::RealDestroyWindowSlot());
     MacSymbolHooks::RegisterDlsymHook("glfwSetInputMode", reinterpret_cast<void*>(&hkglfwSetInputMode), MacGlfwBridge::RealSetInputModeSlot());

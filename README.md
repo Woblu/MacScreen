@@ -42,9 +42,11 @@ The settings, config files and in-game interface are the same as Toolscreen on W
    - **MultiMC**: right-click instance → "Instance Folder"
 3. Copy the `.jar` into the instance folder and double-click it (or run `java -jar` on it in Terminal)
 4. Follow the on-screen instructions. If the launcher is running, the installer asks to restart it.
-5. Launch Minecraft and look for the Toolscreen popup in the top-left corner
+5. Launch Minecraft and look for the MacScreen popup in the top-left corner
 
 The installer copies Toolscreen and [LibLogger](https://github.com/jojoe77777/Toolscreen/tree/main/liblogger) to `~/.config/toolscreen/dlls` and sets the instance's wrapper command (Settings → Custom commands) to `/usr/bin/env DYLD_INSERT_LIBRARIES=<liblogger.dylib>:<Toolscreen.dylib>`, so the game starts with both injected, LibLogger first. This is the macOS counterpart of the DLL injection the Windows installer sets up. The instance's previous custom commands are saved so **Uninstall** can put them back.
+
+It also copies the `.jar` to `~/.config/toolscreen/MacScreen.jar` and makes it the instance's pre-launch command. Before each launch it runs the pre-launch command you already had, then checks this repository's latest release and offers to update, like Toolscreen's updater on Windows. An update is installed before the game starts, so that launch already uses it.
 
 ## Configuration
 

@@ -8,6 +8,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_OBJCXX_STANDARD 20)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 
+# Raise MACSCREEN_RELEASE for every release; the release tag is v${MACSCREEN_VERSION}.
+# The updater compares it with the latest GitHub release.
+set(MACSCREEN_RELEASE 4)
+set(MACSCREEN_VERSION "${TOOLSCREEN_VERSION}-macos.${MACSCREEN_RELEASE}")
+
 set(TOOLSCREEN_MACOS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos")
 set(TOOLSCREEN_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(TOOLSCREEN_GENERATED_VERSION_HEADER "${TOOLSCREEN_GENERATED_DIR}/version.h")
@@ -187,6 +192,7 @@ target_include_directories(Toolscreen PRIVATE
 target_compile_definitions(Toolscreen PRIVATE
     TOOLSCREEN_EXPORTS
     TOOLSCREEN_MACOS
+    MACSCREEN_VERSION_STRING="${MACSCREEN_VERSION}"
     CMAKE_BUILD
     GL_SILENCE_DEPRECATION
     NOMINMAX
@@ -252,26 +258,29 @@ file(DOWNLOAD "https://github.com/jojoe77777/Toolscreen/releases/download/liblog
     EXPECTED_HASH SHA512=99d9814204584c80ee2a77a7fbdf852bc6349a8cb0fbf48397780f95d3d07e51743250cc8aaf53c078d0e3602f2c9df7431eec9ccb1c337cb9afc55a30cdbe65
 )
 
-# Toolscreen-<version>-macos.jar: the installer with both dylibs embedded.
+# MacScreen-<version>.jar: the installer and updater with both dylibs embedded.
+# The updater runs on the instance's Java, so it is built for Java 8.
 find_package(Java 17 COMPONENTS Development REQUIRED)
 set(TS_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
 set(TS_INSTALLER_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/installer")
-set(TS_INSTALLER_JAR "${TS_PACKAGE_DIR}/Toolscreen-${TOOLSCREEN_VERSION}-macos.jar")
+set(TS_INSTALLER_JAR "${TS_PACKAGE_DIR}/MacScreen-${MACSCREEN_VERSION}.jar")
 set(TS_INSTALLER_VERSION_FILE "${CMAKE_CURRENT_BINARY_DIR}/installer_version.txt")
-file(WRITE "${TS_INSTALLER_VERSION_FILE}" "${TOOLSCREEN_VERSION}")
+file(WRITE "${TS_INSTALLER_VERSION_FILE}" "${MACSCREEN_VERSION}")
 add_custom_target(macos_package
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${TS_INSTALLER_BUILD_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${TS_INSTALLER_BUILD_DIR}" "${TS_PACKAGE_DIR}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${TS_INSTALLER_BUILD_DIR}/classes/payload" "${TS_PACKAGE_DIR}"
-    COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -d "${TS_INSTALLER_BUILD_DIR}/classes"
-        "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java"
+    COMMAND ${Java_JAVAC_EXECUTABLE} --release 8 -Xlint:-options -encoding UTF-8 -d "${TS_INSTALLER_BUILD_DIR}/classes"
+        "${TOOLSCREEN_MACOS_DIR}/installer/Updater.java"
+    COMMAND ${Java_JAVAC_EXECUTABLE} --release 17 -encoding UTF-8 -cp "${TS_INSTALLER_BUILD_DIR}/classes"
+        -d "${TS_INSTALLER_BUILD_DIR}/classes" "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:Toolscreen>" "${TS_INSTALLER_BUILD_DIR}/classes/payload/Toolscreen.dylib"
     COMMAND ${CMAKE_COMMAND} -E copy "${TS_LIBLOGGER_DYLIB}" "${TS_INSTALLER_BUILD_DIR}/classes/payload/liblogger.dylib"
     COMMAND ${CMAKE_COMMAND} -E copy "${TS_INSTALLER_VERSION_FILE}" "${TS_INSTALLER_BUILD_DIR}/classes/payload/version.txt"
-    COMMAND ${Java_JAR_EXECUTABLE} --create --file "${TS_INSTALLER_JAR}" --main-class com.toolscreen.macos.Installer
+    COMMAND ${Java_JAR_EXECUTABLE} --create --file "${TS_INSTALLER_JAR}" --main-class com.toolscreen.macos.Updater
         -C "${TS_INSTALLER_BUILD_DIR}/classes" .
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Toolscreen>" "${TS_PACKAGE_DIR}/Toolscreen.dylib"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${TS_LIBLOGGER_DYLIB}" "${TS_PACKAGE_DIR}/liblogger.dylib"
-    DEPENDS Toolscreen "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java"
+    DEPENDS Toolscreen "${TOOLSCREEN_MACOS_DIR}/installer/Installer.java" "${TOOLSCREEN_MACOS_DIR}/installer/Updater.java"
     COMMENT "Building the macOS installer"
     VERBATIM
 )

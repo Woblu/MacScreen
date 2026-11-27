@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <string>
+
+void Log(const std::string& message);
 
 namespace {
 
@@ -573,6 +576,11 @@ LRESULT CALLBACK GlfwWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const int width = LOWORD(lParam);
         const int height = HIWORD(lParam);
         if (width <= 0 || height <= 0) return 0;
+        static LPARAM s_loggedSize = 0;
+        if (lParam != s_loggedSize) {
+            s_loggedSize = lParam;
+            Log("[macOS] Game framebuffer set to " + std::to_string(width) + "x" + std::to_string(height));
+        }
         const double s = Scale();
         if (g_state.game.windowSize) {
             g_state.game.windowSize(g_state.window, static_cast<int>(std::lround(width / s)), static_cast<int>(std::lround(height / s)));
@@ -705,6 +713,15 @@ void RefreshSnapshot(bool includeTitle) {
             s.clientWidth = w;
             s.clientHeight = h;
         }
+    }
+    static double s_loggedScale = 0.0;
+    static int s_loggedWidth = 0, s_loggedHeight = 0;
+    if (s.scale != s_loggedScale || w != s_loggedWidth || h != s_loggedHeight) {
+        s_loggedScale = s.scale;
+        s_loggedWidth = w;
+        s_loggedHeight = h;
+        Log("[macOS] Window framebuffer " + std::to_string(w) + "x" + std::to_string(h) + ", scale " + std::to_string(s.scale) +
+            " (display scale " + std::to_string(MacOs::PrimaryDisplayScale()) + ")");
     }
     if (includeTitle) s.title = MacOs::WindowTitle(g_state.nsWindow);
     MacWin32::UpdateWindowSnapshot(g_state.hwnd, s);
